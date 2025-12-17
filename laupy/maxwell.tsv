@@ -1,0 +1,961 @@
+Host	CPUCount	CPUGFLOPS	Memory	GPU	GPUFLOPS	CPU	Constraints	Partitions	Warranty
+max-display004	40 (2/10/2)	768	376GB	4xRTX 2080	0	Gold 5115 CPU @ 2.40GHz		wgs	2024-06
+max-display005	40 (2/10/2)	768	376GB	4xRTX 2080	0	Gold 5115 CPU @ 2.40GHz		wgs	2024-06
+max-display007	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543		wgs	2026-09
+max-display008	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543		wgs	2026-09
+max-display009	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543		wgs	2026-09
+max-display010	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543		wgs	2026-09
+max-display011	96 (2/24/2)	1536	768GB	0	0	Gold 6442Y		wgs	2029-07
+max-display012	96 (2/24/2)	1536	768GB	0	0	Gold 6442Y		wgs	2029-07
+max-display013	96 (2/24/2)	1536	768GB	0	0	Gold 6442Y		wgs	2029-07
+max-cssb-display002	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz		wgs	2023-11
+max-fs-display001	128 (2/32/2)	1485	512GB	2xRTX A6000	0	AMD EPYC 7542		wgs	2025-09
+max-fs-display002	128 (2/32/2)	1485	512GB	2xRTX A6000	0	AMD EPYC 7542		wgs	2025-09
+max-fs-display003	128 (2/32/2)	1485	512GB	2xRTX A6000	0	AMD EPYC 7542		wgs	2025-09
+max-fs-display004	128 (2/32/2)	1485	512GB	2xRTX A6000	0	AMD EPYC 7542		wgs	2025-09
+max-fs-display005	128 (2/32/2)	1485	512GB	2xRTX A6000	0	AMD EPYC 7542		wgs	2025-09
+max-fs-display006	128 (2/32/2)	1485	512GB	2xRTX A6000	0	AMD EPYC 7542		wgs	2025-09
+max-hzgg007	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543		wgs	2027-10
+max-hzgg008	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543		wgs	2027-10
+max-hzgg009	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543		wgs	2027-10
+max-hzgg010	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543		wgs	2027-12
+max-hzgg002	80 (2/20/2)	1728	1511GB	6xGV100GL	42000	Gold 6148 CPU @ 2.40GHz		wgs	2024-02
+max-cdcs001	256 (2/64/2)	2662	1007GB	0	0	AMD EPYC 7H12	EPYC, 7H12, 1024G	maxcpu allcpu	2026-05
+max-cdcs002	64 (2/16/2)	998	1007GB	0	0	AMD EPYC 7F52	EPYC, 7F52, 1024G	maxcpu allcpu	2026-05
+max-cdcsg001	64 (2/16/2)	844	512GB	4xGA100	38800	AMD EPYC 7302	EPYC, 7302, 512G, GPU, GPUx4, A100, A100-PCIE-40GB	vds allgpu	2026-05
+max-cfel021	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	cfel cfel-cmi allcpu	2024-05
+max-cfel022	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	cfel cfel-cmi allcpu	2024-05
+max-cfel023	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	cfel cfel-cmi allcpu	2024-05
+max-cfel024	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	cfel cfel-cmi allcpu	2024-05
+max-cfel025	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	cfel cfel-cmi allcpu	2024-05
+max-cfel026	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	cfel cfel-cmi allcpu	2024-05
+max-cfel027	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	cfel cfel-cmi allcpu	2024-05
+max-cfel028	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	cfel cfel-cmi allcpu	2024-05
+max-cfel029	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	cfel cfel-cmi allcpu	2030-02
+max-cfel030	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	cfel cfel-cmi allcpu	2030-02
+max-cfelg007	40 (2/10/2)	768	376GB	2xGV100GL	14000	Gold 5115 CPU @ 2.40GHz	INTEL, Gold-5115, 384G, GPU, GPUx2, V100, V100-SXM2-32GB	cfel cfel-cmi allgpu	2024-06
+max-cfelg008	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	cfel cfel-cdi allgpu	2027-01
+max-cfelg009	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	cfel cfel-cdi allgpu	2027-01
+max-cfelg010	128 (2/32/2)	1867	256GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 256G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	cfel cfel-cdi allgpu	2027-12
+max-cfelg011	128 (2/32/2)	1867	256GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 256G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	cfel cfel-cdi allgpu	2027-12
+max-cmsg011	64 (2/16/2)	1536	376GB	1xGA100	9700	Gold 5218 CPU @ 2.30GHz	INTEL, Gold-5218, 384G, BS, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu	2026-02
+max-cssb002	48 (2/12/2)	1306	1511GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 1536G	cssbcpu	2023-02
+max-cssb003	48 (2/12/2)	1306	1511GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 1536G	cssbcpu	2023-02
+max-cssb005	48 (2/12/2)	1306	1536GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 1536G	cssbcpu allcpu	2023-02
+max-cssb006	48 (2/12/2)	1306	1536GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 1024G	cssbcpu allcpu	2023-02
+max-cssb007	48 (2/12/2)	1306	1536GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 1536G	cssbcpu allcpu	2023-02
+max-cssb008	48 (2/12/2)	1306	1536GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 1536G	cssbcpu allcpu	2023-02
+max-cssb009	48 (2/12/2)	1306	1536GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 1536G	cssbcpu allcpu	2023-02
+max-cssb010	48 (2/12/2)	1306	1536GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 1536G	cssbcpu allcpu	2023-02
+max-cssb011	48 (2/12/2)	1306	768GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 768G	ukecpu allcpu	2024-07
+max-cssb012	48 (2/12/2)	1306	768GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 768G	ukecpu allcpu	2024-07
+max-cssb013	48 (2/12/2)	1306	768GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 768G	ukecpu allcpu	2024-07
+max-cssb014	48 (2/12/2)	1306	768GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 768G	ukecpu allcpu	2024-07
+max-cssb015	48 (2/12/2)	1306	768GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 768G	ukecpu allcpu	2024-07
+max-cssb016	48 (2/12/2)	1306	768GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 768G	ukecpu allcpu	2024-07
+max-cssb017	48 (2/12/2)	1306	768GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 768G	ukecpu allcpu	2024-07
+max-cssb018	48 (2/12/2)	1306	768GB	0	0	Gold 6126 CPU @ 2.60GHz	INTEL, Gold-6126, 768G	ukecpu allcpu	2024-07
+max-cssb019	48 (2/12/2)	1306	768GB	0	0	Gold 6226 CPU @ 2.70GHz	INTEL, Gold-6226, 768G	ukecpu allcpu	2025-03
+max-cssb020	48 (2/12/2)	1306	768GB	0	0	Gold 6226 CPU @ 2.70GHz	INTEL, Gold-6226, 768G	ukecpu allcpu	2025-03
+max-cssb021	48 (2/12/2)	1306	768GB	0	0	Gold 6226 CPU @ 2.70GHz	INTEL, Gold-6226, 768G	ukecpu allcpu	2025-03
+max-cssb022	48 (2/12/2)	1306	768GB	0	0	Gold 6226 CPU @ 2.70GHz	INTEL, Gold-6226, 768G	ukecpu allcpu	2025-03
+max-cssb023	48 (2/12/2)	1306	768GB	0	0	Gold 6226 CPU @ 2.70GHz	INTEL, Gold-6226, 512G	ukecpu allcpu	2025-03
+max-cssb024	48 (2/12/2)	1306	768GB	0	0	Gold 6226 CPU @ 2.70GHz	INTEL, Gold-6226, 768G	ukecpu allcpu	2025-03
+max-cssb025	48 (2/12/2)	1306	768GB	0	0	Gold 6226 CPU @ 2.70GHz	INTEL, Gold-6226, 768G	ukecpu allcpu	2025-03
+max-cssb026	48 (2/12/2)	1306	768GB	0	0	Gold 6226 CPU @ 2.70GHz	INTEL, Gold-6226, 768G	ukecpu allcpu	2025-03
+max-cssb027	80 (2/20/2)	1408	376GB	0	0	Gold 6230 CPU @ 2.10GHz	INTEL, Gold-6230, 384G	livcpu allcpu	2025-03
+max-cssb028	80 (2/20/2)	1408	376GB	0	0	Gold 6230 CPU @ 2.10GHz	INTEL, Gold-6230, 384G	livcpu allcpu	2025-03
+max-cssb029	80 (2/20/2)	1408	376GB	0	0	Gold 6230 CPU @ 2.10GHz	INTEL, Gold-6230, 384G	livcpu allcpu	2025-03
+max-cssb030	80 (2/20/2)	1408	376GB	0	0	Gold 6230 CPU @ 2.10GHz	INTEL, Gold-6230, 384G	livcpu allcpu	2025-03
+max-cssb031	80 (2/20/2)	1408	376GB	0	0	Gold 6230 CPU @ 2.10GHz	INTEL, Gold-6230, 384G	livcpu allcpu	2025-03
+max-cssb032	80 (2/20/2)	1408	376GB	0	0	Gold 6230 CPU @ 2.10GHz	INTEL, Gold-6230, 384G	livcpu allcpu	2025-03
+max-cssb033	80 (2/20/2)	1408	376GB	0	0	Gold 6230 CPU @ 2.10GHz	INTEL, Gold-6230, 384G	livcpu allcpu	2025-03
+max-cssb034	80 (2/20/2)	1408	376GB	0	0	Gold 6230 CPU @ 2.10GHz	INTEL, Gold-6230, 384G	livcpu allcpu	2025-03
+max-cssbg001	40 (2/10/2)	768	512GB	2xGP100GL	9400	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx2, P100	cssbgpu allgpu	2023-02
+max-cssbg002	40 (2/10/2)	768	512GB	2xGP100GL	9400	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx2, P100	cssbgpu allgpu	2023-02
+max-cssbg003	40 (2/10/2)	768	512GB	2xGP100GL	9400	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx2, P100	cssbgpu allgpu	2023-02
+max-cssbg004	64 (2/16/2)	1126	768GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 768G, GPU, GPUx2, V100, V100S-PCIE-32GB	cssbgpu allgpu	2025-03
+max-cssbg006	64 (2/16/2)	1126	768GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 768G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	vds allgpu	2025-12
+max-cssbg007	64 (2/16/2)	1126	768GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 768G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	vds allgpu	2025-12
+max-cssbg008	64 (2/16/2)	1126	768GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 768G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	vds allgpu	2025-12
+max-cssbg009	64 (2/16/2)	1126	768GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 768G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	vds allgpu	2025-12
+max-cssbg011	128 (2/32/2)	1331	512GB	4xGA100	38800	AMD EPYC 75F3	EPYC, 75F3, 512G, GPU, GPUx4, A100, A100-PCIE-40GB	vds allgpu	2026-02
+max-cssbg012	128 (2/32/2)	1331	512GB	4xGA100	38800	AMD EPYC 75F3	EPYC, 75F3, 512G, GPU, GPUx4, A100, A100-PCIE-40GB	vds allgpu	2026-02
+max-cssbg013	128 (2/32/2)	1331	512GB	4xGA100	38800	AMD EPYC 75F3	EPYC, 75F3, 512G, GPU, GPUx4, A100, A100-PCIE-40GB	vds allgpu	2026-02
+max-cssbg014	128 (2/32/2)	1331	512GB	4xGA100	38800	AMD EPYC 75F3	EPYC, 75F3, 512G, GPU, GPUx4, A100, A100-PCIE-40GB	vds allgpu	2026-02
+max-cssbg018	128 (2/32/2)	1867	1007GB	4xGA100	38800	AMD EPYC 7513	EPYC, 7513, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-80GB	cssbgpu allgpu	2028-02
+max-cssbg019	128 (2/32/2)	1867	1007GB	4xGA100	38800	AMD EPYC 7513	EPYC, 7513, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-80GB	cssbgpu allgpu	2028-03
+max-cssbg020	128 (2/32/2)	1867	1007GB	4xGA100	38800	AMD EPYC 7513	EPYC, 7513, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-80GB	cssbgpu allgpu	2028-03
+max-cssbg021	128 (2/32/2)	1867	1007GB	4xGA100	38800	AMD EPYC 7513	EPYC, 7513, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-80GB	cssbgpu allgpu	2028-03
+max-cssbg022	128 (2/32/2)	1867	1007GB	4xGA100	38800	AMD EPYC 7513	EPYC, 7513, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-80GB	cssbgpu allgpu	2028-03
+max-cssbg023	128 (2/32/2)	1867	1007GB	4xGA100	38800	AMD EPYC 7513	EPYC, 7513, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-80GB	cssbgpu allgpu	2028-03
+max-cssbg024	96 (2/24/2)	1536	768GB	2xGH100	68000	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx2, H100, H100-NVL-96GB	vds allgpu	2029-12
+max-cssbg025	96 (2/24/2)	1536	768GB	2xGH100	68000	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx2, H100, H100-NVL-96GB	vds allgpu	2029-12
+max-cssbg026	96 (2/24/2)	1536	768GB	0	0	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx4, L40S	vds allgpu	2030-07
+max-cssbg027	96 (2/24/2)	1536	768GB	0	0	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx4, L40S	vds allgpu	2030-07
+max-exfl101	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl102	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl103	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl104	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl105	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl106	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl107	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl108	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl109	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl110	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl112	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl113	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl114	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl115	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl116	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl117	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl118	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl119	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl120	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl121	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl122	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl123	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl125	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl126	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl128	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl129	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl130	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl131	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl132	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl133	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl134	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel upex-high upex allcpu	2023-02
+max-exfl135	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl136	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl137	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl138	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl139	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex	2023-02
+max-exfl140	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl141	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl142	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl143	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl144	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl145	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl146	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl147	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl148	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl149	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl150	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl152	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl153	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl154	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl155	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl156	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl157	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl158	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl159	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl160	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl162	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl163	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl164	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl165	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl166	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex	2023-02
+max-exfl167	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl168	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl169	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl170	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl171	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl172	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl173	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl174	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl175	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl176	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl177	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl178	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl179	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-02
+max-exfl181	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-03
+max-exfl182	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	upex-middle exfel upex allcpu	2023-03
+max-exfl183	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel-theory exfel-wp72 allcpu	2023-03
+max-exfl184	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel-theory exfel-wp72 allcpu	2023-03
+max-exfl186	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel-theory exfel-wp72 allcpu	2023-03
+max-exfl188	72 (2/18/2)	1728	768GB	0	0	Gold 6140 CPU @ 2.30GHz	INTEL, Gold-6140, 768G	exfel-theory exfel-wp72 allcpu	2023-03
+max-exfl189	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl190	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl191	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl192	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl193	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl194	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl195	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl196	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl197	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl198	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl199	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl200	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl201	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl202	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl203	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl204	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl205	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl206	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl207	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl208	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl209	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl210	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl211	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl212	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl213	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl214	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl215	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl216	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl217	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl218	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl219	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl220	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl221	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl222	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl223	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl224	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl225	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl226	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl227	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl228	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl229	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl230	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl231	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl232	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl233	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl234	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl235	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl236	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl237	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl238	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl239	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl240	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl241	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl242	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl243	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl244	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl245	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl246	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl247	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl248	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl249	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl250	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl251	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl252	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl253	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl254	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl255	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl256	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl257	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl258	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel upex allcpu	2024-08
+max-exfl259	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel allcpu upex	2024-08
+max-exfl260	72 (2/18/2)	1844	768GB	0	0	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 768G	upex-middle exfel allcpu upex	2024-08
+max-exfl261	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl262	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl263	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl264	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl265	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl266	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl267	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl268	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl269	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl270	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl271	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl272	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl273	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl274	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl275	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl276	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl277	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl278	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl279	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl280	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl281	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl282	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl283	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl284	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl285	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl286	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl287	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl288	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl289	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl290	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl291	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl292	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl293	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl294	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl295	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl296	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl297	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl298	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl299	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl300	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl301	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl302	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl303	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl304	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl305	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl306	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl307	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl308	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl309	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl310	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl311	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl312	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl313	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl314	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl315	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl316	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl317	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl318	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl319	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl320	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl321	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl322	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl323	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl324	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl325	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl326	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl327	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl328	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl329	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl330	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl331	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl332	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl333	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl334	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl335	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl336	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl337	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl338	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl339	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl340	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl341	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl342	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl343	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl344	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl345	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl346	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl347	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl348	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl349	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl350	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl351	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl352	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl353	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl354	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl355	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl356	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl357	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl358	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl359	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl360	128 (2/32/2)	1485	512GB	0	0	AMD EPYC 7542	EPYC, 7542, 512G	upex-beamtime exfel allcpu upex	2026-01
+max-exfl361	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-theory exfel-wp72 allcpu	2028-01
+max-exfl362	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-theory exfel-wp72 allcpu	2028-01
+max-exfl363	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-theory exfel-wp72 allcpu	2028-01
+max-exfl364	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-theory exfel-wp72 allcpu	2028-01
+max-exfl365	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-theory exfel-wp72 allcpu	2028-01
+max-exfl366	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-theory exfel-wp72 allcpu	2028-01
+max-exfl367	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-theory exfel-wp72 allcpu	2028-01
+max-exfl368	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-theory exfel-wp72 allcpu	2028-01
+max-exfl369	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl370	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl371	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl372	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl373	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl374	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl375	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl376	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl377	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl378	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl379	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl380	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl381	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl382	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl383	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl384	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl385	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl386	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl387	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl388	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl389	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl390	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl391	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl392	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl393	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl394	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl395	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl396	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl397	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl398	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl399	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl400	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl401	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl402	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl403	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl404	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl405	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl406	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl407	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl408	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl409	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl410	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl411	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl412	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl413	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl414	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl415	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl416	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl417	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl418	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl419	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl420	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl421	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl422	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl423	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl424	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl425	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl426	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl427	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl428	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl429	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl430	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl431	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl432	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl433	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl434	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl435	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl436	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl437	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl438	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl439	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl440	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl441	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl442	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl443	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl444	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl445	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl446	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl447	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl448	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl449	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl450	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-01
+max-exfl451	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-03
+max-exfl452	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-03
+max-exfl453	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-03
+max-exfl454	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-03
+max-exfl455	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-03
+max-exfl456	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-03
+max-exfl457	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-03
+max-exfl464	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-th exfel-theory allcpu	2028-04
+max-exfl465	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-th exfel-theory allcpu	2028-04
+max-exfl466	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-th exfel-theory allcpu	2028-04
+max-exfl467	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	exfel-th exfel-theory allcpu	2028-04
+max-exfl468	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-04
+max-exfl469	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	upex-beamtime exfel upex allcpu	2028-04
+max-exfl470	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl471	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl472	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl473	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl474	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl475	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl476	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl477	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl478	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl479	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl480	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl481	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl482	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl483	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl484	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl485	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl486	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl487	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl488	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl489	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl490	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl491	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl492	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl493	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl494	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl495	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl496	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl497	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-beamtime exfel upex allcpu	2029-07
+max-exfl498	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-07
+max-exfl499	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-07
+max-exfl500	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-07
+max-exfl501	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-07
+max-exfl502	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl503	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl504	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl505	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl506	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl507	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl508	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl509	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl510	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl511	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl512	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl513	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl514	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl515	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl516	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl517	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl518	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl519	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl520	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl521	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl522	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl523	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl524	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl525	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl526	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl527	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl528	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exfl529	128 (2/32/2)	2201	768GB	0	0	AMD EPYC 9374	EPYC, 9374F, 768G	upex-middle exfel upex allcpu	2029-10
+max-exflg005	80 (2/20/2)	1408	256GB	2xGP100GL	9400	E5-2698 v4 @ 2.20GHz	INTEL, V4, E5-2698, 256G, GPU, GPUx2, P100	exfel-th exfel-theory allgpu	2022-04
+max-exflg006	40 (2/10/2)	768	256GB	1xGV100GL	7000	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, V100, V100-PCIE-32GB	allgpu upex-beamtime exfel upex	2022-04
+max-exflg007	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2022-04
+max-exflg009	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg010	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg011	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg012	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg013	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg014	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg015	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg016	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg017	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg018	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg019	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg020	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg021	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg022	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg023	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg024	40 (2/10/2)	768	256GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G, GPU, GPUx1, P100	allgpu upex-beamtime exfel upex	2023-02
+max-exflg025	128 (2/32/2)	1894	1007GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 1024G, GPU, GPUx1, A100, A100-PCIE-80GB	exfel-th exfel-theory allgpu	2027-12
+max-exflg026	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	allgpu exfel upex	2027-12
+max-exflg027	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	allgpu exfel upex	2027-12
+max-exflg028	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx2, A6000	exfel-th exfel-theory allgpu	2027-12
+max-exflg029	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx2, A6000	exfel-th exfel-theory allgpu	2027-12
+max-exflg030	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx2, A6000	exfel-th exfel-theory allgpu	2027-12
+max-exflg031	128 (2/32/2)	1894	512GB	2xRTX A6000	0	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx2, A6000	exfel-th exfel-theory allgpu	2027-12
+max-exflg032	128 (2/32/2)	1867	512GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 512G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	exfel-th allgpu	2028-03
+max-exflg033	128 (2/32/2)	1867	512GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 512G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	exfel-th allgpu	2028-03
+max-exflg034	128 (2/32/2)	1867	512GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 512G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	exfel-th allgpu	2028-03
+max-exflg035	128 (2/32/2)	1867	512GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 512G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	exfel-th allgpu	2028-03
+max-ferrari001	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari002	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari003	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari004	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari005	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari006	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari007	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari008	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari009	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari010	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari011	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari012	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari013	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari014	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari015	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari016	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari017	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari018	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari019	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari020	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari021	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-guest xfel-sim allcpu	2022-12
+max-ferrari022	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-sim xfel-guest allcpu	2022-12
+max-ferrari023	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-sim xfel-guest allcpu	2022-12
+max-ferrari024	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	xfel-op xfel-sim xfel-guest allcpu	2022-12
+max-hmzg001	96 (2/24/2)	1536	768GB	2xGH100	68000	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx2, H100, H100-NVL-96GB	maxgpu allgpu	2029-07
+max-hmzg002	96 (2/24/2)	1536	768GB	0	0	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx4, L40S	maxgpu allgpu	2029-07
+max-hmzg003	96 (2/24/2)	1536	768GB	0	0	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx4, L40S	maxgpu allgpu	2029-07
+max-hmzg004	96 (2/24/2)	1536	768GB	0	0	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx4, L40S	maxgpu allgpu	2029-07
+max-hpcgwg001	256 (2/64/2)	4506	1536GB	4xH200	136000	AMD EPYC 9555	EPYC, 9555, 1536G, BS, GPU, GPUx4, H200, H200-NVL-141GB	hpcgwgpu comgpu	2032-07
+max-hpcgwg002	256 (2/64/2)	4506	1536GB	4xH200	136000	AMD EPYC 9555	EPYC, 9555, 1536G, BS, GPU, GPUx4, H200, H200-NVL-141GB	hpcgwgpu comgpu	2032-07
+max-hpcgwg003	256 (2/64/2)	4506	1536GB	4xH200	136000	AMD EPYC 9555	EPYC, 9555, 1536G, BS, GPU, GPUx4, H200, H200-NVL-141GB	hpcgwgpu comgpu	2032-07
+max-hpcgwg004	256 (2/64/2)	4506	1536GB	4xH200	136000	AMD EPYC 9555	EPYC, 9555, 1536G, BS, GPU, GPUx4, H200, H200-NVL-141GB	hpcgwgpu comgpu	2032-07
+max-hpcgwg005	256 (2/64/2)	4506	1536GB	4xH200	136000	AMD EPYC 9555	EPYC, 9555, 1536G, BS, GPU, GPUx4, H200, H200-NVL-141GB	hpcgwgpu comgpu	2032-07
+max-hpcgwg006	256 (2/64/2)	4506	1536GB	4xH200	136000	AMD EPYC 9555	EPYC, 9555, 1536G, BS, GPU, GPUx4, H200, H200-NVL-141GB	hpcgwgpu comgpu	2032-07
+max-hpcgwg007	256 (2/64/2)	4506	1536GB	4xH200	136000	AMD EPYC 9555	EPYC, 9555, 1536G, BS, GPU, GPUx4, H200, H200-NVL-141GB	hpcgwgpu comgpu	2032-07
+max-hpcgwg008	256 (2/64/2)	4506	1536GB	4xH200	136000	AMD EPYC 9555	EPYC, 9555, 1536G, BS, GPU, GPUx4, H200, H200-NVL-141GB	hpcgwgpu comgpu	2032-07
+max-hzgg003	32 (2/8/2)	1178	768GB	2xGV100GL	14000	Gold 6234 CPU @ 3.30GHz	INTEL, Gold-6234, 512G, GPU, GPUx2, V100, V100-SXM2-32GB	hzg allgpu	2025-01
+max-hzgg004	32 (2/8/2)	1178	768GB	2xGV100GL	14000	Gold 6234 CPU @ 3.30GHz	INTEL, Gold-6234, 512G, GPU, GPUx2, V100, V100-SXM2-32GB	hzg allgpu	2025-01
+max-hzgg005	128 (2/64/1)	1116	4019GB	10xQuadro RTX	0	AMD EPYC 7702	EPYC, 7702, 4096G, GPU, GPUx10, RTX8000	hzg allgpu	2025-12
+max-hzgg006	128 (2/64/1)	1116	4019GB	10xQuadro RTX	0	AMD EPYC 7702	EPYC, 7702, 4096G, GPU, GPUx10, RTX8000	hzg allgpu	2026-01
+max-hzgg011	192 (2/96/1)	2849	2267GB	4xGH100	136000	AMD EPYC 9654	EPYC, 9654, 2000G, BS, GPU, GPUx4, H100, H100-NVL-96GB	hzg allgpu	2029-11
+max-hzgg012	192 (2/96/1)	2849	2267GB	4xRTX A6000	0	AMD EPYC 9654	EPYC, 9654, 2000G, BS, GPU, GPUx4, RTX6000	hzg allgpu	2029-12
+max-hzgg013	192 (2/96/1)	2849	2267GB	4xRTX A6000	0	AMD EPYC 9654	EPYC, 9654, 2000G, BS, GPU, GPUx4, RTX6000	hzg allgpu	2029-12
+max-itt001	64 (2/16/2)	844	512GB	0	0	AMD EPYC 7302	EPYC, 7302, 512G	comcpu com	n/a
+max-itt002	192 (2/48/2)	2795	256GB	0	0	AMD EPYC 7643	EPYC, 7643, 256G	ponline\_p11\_com comcpu com	n/a
+max-itt003	192 (2/48/2)	2795	256GB	0	0	AMD EPYC 7643	EPYC, 7643, 256G	ponline\_p11\_com comcpu com	n/a
+max-itt004	192 (2/48/2)	2795	256GB	0	0	AMD EPYC 7643	EPYC, 7643, 256G	ponline\_p11\_com comcpu com	n/a
+max-ittg001	40 (2/10/2)	768	376GB	1xGV100GL	7000	Silver 4210 CPU @ 2.20GHz	INTEL, Silver-4210, 384G, BS, GPU, GPUx1, V100, V100S-PCIE-32GB	com	2025-11
+max-m001	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allcpu	2027-10
+max-m002	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allcpu	2027-10
+max-mpag001	192 (2/48/2)	1690	1007GB	4xGA100	38800	AMD EPYC 7552	EPYC, 7552, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-40GB	mpa allgpu	2026-07
+max-mpag002	192 (2/48/2)	1690	1007GB	4xGA100	38800	AMD EPYC 7552	EPYC, 7552, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-40GB	mpa allgpu	2026-07
+max-mpag003	192 (2/48/2)	1690	1007GB	4xGA100	38800	AMD EPYC 7552	EPYC, 7552, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-40GB	mpa allgpu	2026-07
+max-mpag004	16 (1/8/2)	435	256GB	1xGA100	9700	AMD EPYC 7262	EPYC, 7262, 256G, BS, GPU, GPUx1, A100, A100-PCIE-40GB	mpaj mpa allgpu	2026-09
+max-mpag005	16 (1/8/2)	435	256GB	1xGA100	9700	AMD EPYC 7262	EPYC, 7262, 256G, BS, GPU, GPUx1, A100, A100-PCIE-40GB	mpaj mpa allgpu	2026-09
+max-mpag006	16 (1/8/2)	435	256GB	1xGA100	9700	AMD EPYC 7262	EPYC, 7262, 256G, BS, GPU, GPUx1, A100, A100-PCIE-40GB	mpaj mpa allgpu	2026-08
+max-mpag007	16 (1/8/2)	435	256GB	1xGA100	9700	AMD EPYC 7262	EPYC, 7262, 256G, BS, GPU, GPUx1, A100, A100-PCIE-40GB	mpaj mpa allgpu	2026-08
+max-mpag008	192 (2/48/2)	1690	1007GB	4xGA100	38800	AMD EPYC 7552	EPYC, 7552, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-80GB	mpa allgpu	2026-08
+max-mpag009	192 (2/48/2)	1690	1007GB	4xGA100	38800	AMD EPYC 7552	EPYC, 7552, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-40GB	mpa allgpu	2026-08
+max-mpag010	192 (2/48/2)	1690	1007GB	4xGA100	38800	AMD EPYC 7552	EPYC, 7552, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-40GB	mpa allgpu	2026-08
+max-mpag011	192 (2/48/2)	1690	1007GB	4xGA100	38800	AMD EPYC 7552	EPYC, 7552, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-40GB	mpa allgpu	2026-08
+max-mpag012	192 (2/48/2)	1690	1007GB	4xGA100	38800	AMD EPYC 7552	EPYC, 7552, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-40GB	mpa allgpu	2026-08
+max-mpag013	192 (2/48/2)	1690	1007GB	4xGA100	38800	AMD EPYC 7552	EPYC, 7552, 1024G, BS, GPU, GPUx4, A100, A100-SXM4-40GB	mpa allgpu	2026-08
+max-p3a009	40 (2/10/2)	768	512GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G	pcommissioning	2022-12
+max-p3a010	40 (2/10/2)	768	512GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G	pcommissioning	2022-12
+max-p3a011	40 (2/10/2)	768	512GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G	allrsv pscpu allcpu	2022-12
+max-p3a012	40 (2/10/2)	768	512GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G	allrsv pscpu allcpu	2022-12
+max-p3a013	40 (2/10/2)	768	512GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G	psxcpu allrsv pscpu allcpu	2022-12
+max-p3a014	40 (2/10/2)	768	512GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G	psxcpu allrsv pscpu allcpu	2022-12
+max-p3a015	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	p06 allcpu	2025-07
+max-p3a016	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	p06 allcpu	2025-07
+max-p3a017	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	p06 allcpu	2025-07
+max-p3a018	192 (2/48/2)	1766	256GB	0	0	AMD EPYC 7642	EPYC, 7642, 256G, AP	p11 ponline\_p11 allcpu	2025-07
+max-p3a019	192 (2/48/2)	1766	256GB	0	0	AMD EPYC 7642	EPYC, 7642, 256G, AP	p11 ponline\_p11 allcpu	2025-07
+max-p3a020	192 (2/48/2)	2795	256GB	0	0	AMD EPYC 7643	EPYC, 7643, 256G	ponline\_p09	2028-02
+max-p3a021	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel cfel-ux allcpu	2027-11
+max-p3a022	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel cfel-ux allcpu	2027-11
+max-p3a023	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel cfel-ux allcpu	2027-11
+max-p3a024	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel cfel-cdi allcpu	2027-11
+max-p3a025	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel cfel-cdi allcpu	2027-11
+max-p3a026	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel cfel-cdi allcpu	2027-11
+max-p3a027	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel-cdi allrsv pscpu allcpu	2027-11
+max-p3a028	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel-cdi allrsv pscpu allcpu	2027-11
+max-p3a029	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel-cdi allrsv pscpu allcpu	2027-11
+max-p3a030	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	cfel-cdi allrsv pscpu allcpu	2027-11
+max-p3a031	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	ponline	2027-11
+max-p3a032	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	ponline	2027-11
+max-p3a033	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	ponline	2027-11
+max-p3a034	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	ponline	2027-11
+max-p3a035	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	ponline	2027-11
+max-p3a036	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	ponline	2027-11
+max-p3a037	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	ponline	2027-11
+max-p3a038	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	ponline	2027-11
+max-p3a039	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	cfel cfel-ux allrsv allcpu	2028-12
+max-p3a040	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	cfel cfel-ux allrsv allcpu	2028-12
+max-p3a041	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	cfel cfel-cdi allrsv allcpu	2028-12
+max-p3a042	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	cfel cfel-cdi allrsv allcpu	2028-12
+max-p3a043	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	cfel cfel-cdi allrsv allcpu	2028-12
+max-p3a044	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G, AC	p11 ponline\_p11 allrsv allcpu	2029-09
+max-p3a045	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G, AC	ponline\_p11 p11 allrsv allcpu	2029-09
+max-p3ag004	40 (2/10/2)	768	512GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx1, P100	p10	2023-01
+max-p3ag005	40 (2/10/2)	768	512GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx1, P100	psgpu psxgpu allrsv allgpu	2023-01
+max-p3ag006	40 (2/10/2)	768	512GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx1, P100	psgpu psxgpu allrsv allgpu	2023-01
+max-p3ag007	40 (2/10/2)	768	512GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx1, P100	psgpu psxgpu allrsv allgpu	2023-01
+max-p3ag008	40 (2/10/2)	768	512GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx1, P100	psgpu psxgpu allrsv allgpu	2023-01
+max-p3ag009	40 (2/10/2)	768	512GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx1, P100	psgpu psxgpu allrsv allgpu	2023-01
+max-p3ag010	40 (2/10/2)	768	512GB	1xGP100GL	4700	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx1, P100	psgpu psxgpu allrsv allgpu	2023-01
+max-p3ag011	40 (2/10/2)	768	512GB	4xGP100GL	18800	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 512G, GPU, GPUx4, P100	psgpu allrsv allgpu	2022-12
+max-p3ag012	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag013	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag014	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag015	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag016	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag017	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag018	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag019	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag020	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	pcommissioning allgpu	2023-10
+max-p3ag021	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	ponline allgpu	2023-10
+max-p3ag022	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag023	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag024	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psgpu allrsv allgpu	2023-10
+max-p3ag025	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psxgpu allgpu	2023-10
+max-p3ag026	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psxgpu allgpu	2023-10
+max-p3ag027	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	psxgpu allgpu	2023-10
+max-p3ag028	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	p06 allgpu	2023-10
+max-p3ag029	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	p06 allgpu	2023-10
+max-p3ag030	40 (2/10/2)	704	768GB	1xGP100GL	4700	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 768G, GPU, GPUx1, P100	p06 allgpu	2023-10
+max-p3ag032	128 (2/32/2)	1485	1007GB	1xGA100	9700	AMD EPYC 7542	EPYC, 7542, 1024G, GPU, GPUx1, A100, A100-PCIE-40GB	psgpu allrsv allgpu	2025-09
+max-p3ag033	128 (2/32/2)	1485	1007GB	1xGA100	9700	AMD EPYC 7542	EPYC, 7542, 1024G, GPU, GPUx1, A100, A100-PCIE-40GB	psgpu allrsv allgpu	2025-09
+max-p3ag034	128 (2/32/2)	1485	1007GB	1xGA100	9700	AMD EPYC 7542	EPYC, 7542, 1024G, GPU, GPUx1, A100, A100-PCIE-40GB	psgpu allrsv allgpu	2025-09
+max-p3ag035	128 (2/32/2)	1485	1007GB	1xGA100	9700	AMD EPYC 7542	EPYC, 7542, 1024G, GPU, GPUx1, A100, A100-PCIE-40GB	psgpu allrsv allgpu	2025-09
+max-p4-003	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-06
+max-p4-004	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-06
+max-p4-005	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-06
+max-p4-006	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-06
+max-p4-007	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-06
+max-p4-008	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-06
+max-p4-009	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-08
+max-p4-010	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-08
+max-p4-011	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-08
+max-p4-012	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-08
+max-p4-013	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-08
+max-p4-014	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	petra4 xfel-guest allcpu	2023-08
+max-p4-015	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-016	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-017	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-018	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-019	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-020	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-021	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-022	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-023	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-024	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-025	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-026	40 (2/10/2)	704	376GB	0	0	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G	petra4 xfel-guest allcpu	2023-11
+max-p4-027	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-028	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-029	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-030	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-031	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-032	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-033	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-034	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-035	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-036	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-037	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-038	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-039	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-040	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-041	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-042	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-043	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-044	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-045	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-046	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-047	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-048	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-049	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-050	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-051	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-052	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-053	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-054	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-055	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-056	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-057	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-058	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-059	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-060	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-061	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-062	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-063	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-p4-064	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	petra4-guest petra4 allcpu	2027-11
+max-uhhg001	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg002	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg003	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg004	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg005	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg006	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg007	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg008	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg009	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg010	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg011	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg012	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-uhhg013	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu	2025-12
+max-wn032	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu pscpu allrsv allcpu	2022-12
+max-wn033	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu pscpu allrsv allcpu	2022-12
+max-wn034	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu pscpu allrsv allcpu	2022-12
+max-wn035	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu pscpu allrsv allcpu	2022-12
+max-wn036	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu pscpu allrsv allcpu	2022-12
+max-wn037	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu pscpu allrsv allcpu	2022-12
+max-wn038	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu allrsv allcpu	2022-12
+max-wn039	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu allrsv allcpu	2022-12
+max-wn040	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu allrsv allcpu	2022-12
+max-wn041	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	psxcpu allrsv allcpu	2022-12
+max-wn042	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn043	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn044	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn045	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn046	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn047	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn048	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn049	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn050	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn051	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn052	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn053	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn054	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn055	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn056	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn057	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn058	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn059	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn060	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn061	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn062	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn063	40 (2/10/2)	768	256GB	0	0	E5-2640 v4 @ 2.40GHz	INTEL, V4, E5-2640, 256G	maxcpu allrsv allcpu	2022-12
+max-wn064	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn065	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn066	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn067	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn068	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn069	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn070	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn071	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn072	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn073	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn074	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn075	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn076	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn077	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn078	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn079	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn080	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn081	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn082	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn083	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-10
+max-wn084	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn085	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn086	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn087	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn088	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn089	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn090	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn091	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn092	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn093	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn094	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn095	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn096	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn097	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn098	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn099	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn100	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn101	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn102	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn103	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	short maxcpu allrsv allcpu	2025-09
+max-wn104	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-09
+max-wn105	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-09
+max-wn106	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-09
+max-wn107	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-09
+max-wn108	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-09
+max-wn109	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-09
+max-wn110	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-09
+max-wn111	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-09
+max-wn112	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-09
+max-wn113	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-01
+max-wn114	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-01
+max-wn115	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-01
+max-wn116	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-01
+max-wn117	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-01
+max-wn118	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-01
+max-wn119	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-01
+max-wn120	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-01
+max-wn121	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2026-01
+max-wn122	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	psxcpu pscpu allrsv allcpu	2027-11
+max-wn123	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	psxcpu pscpu allrsv allcpu	2027-11
+max-wn124	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	psxcpu pscpu allrsv allcpu	2027-11
+max-wn125	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	psxcpu pscpu allrsv allcpu	2027-11
+max-wn126	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	psxcpu pscpu allrsv allcpu	2027-11
+max-wn127	128 (2/32/2)	1331	944GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	maxcpu allrsv allcpu	2027-11
+max-wn128	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	maxcpu allrsv allcpu	2027-11
+max-wn129	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	maxcpu allrsv allcpu	2027-11
+max-wn130	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allrsv allcpu	2027-11
+max-wn131	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allrsv allcpu	2027-11
+max-wn132	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allrsv allcpu	2027-11
+max-wn133	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allrsv allcpu	2027-11
+max-wn134	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allrsv allcpu	2027-11
+max-wn135	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allrsv allcpu	2027-11
+max-wn136	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allrsv allcpu	2027-11
+max-wn137	128 (2/32/2)	1331	1007GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 1024G	mcpu allrsv allcpu	2027-11
+max-wn138	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2027-10
+max-wn139	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2027-10
+max-wn140	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2027-10
+max-wn141	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2027-10
+max-wn142	128 (2/32/2)	1331	512GB	0	0	AMD EPYC 75F3	EPYC, 75F3, 512G	maxcpu allrsv allcpu	2027-10
+max-wn143	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn144	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn145	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn146	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn147	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn148	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn149	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn150	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn151	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn152	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn153	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn154	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn155	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn156	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn157	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn158	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn159	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn160	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn161	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn162	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn163	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn164	256 (2/64/2)	3850	755GB	0	0	AMD EPYC 9554	EPYC, 9554, 768G	maxcpu allrsv allcpu	2028-11
+max-wn165	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn166	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn167	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn168	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn169	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn170	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn171	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn172	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn173	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn174	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn175	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn176	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn177	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wn178	256 (2/64/2)	3809	768GB	0	0	AMD EPYC 9534	EPYC, 9534, 768G	maxcpu allrsv allcpu	2029-07
+max-wne001	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	jhub	2024-11
+max-wne002	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	jhub	2024-11
+max-wne003	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	jhub	2024-11
+max-wne004	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	jhub	2024-11
+max-wne005	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	jhub	2024-11
+max-wne006	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	jhub	2024-11
+max-wne007	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	jhub	2024-11
+max-wne008	96 (2/24/2)	858	512GB	0	0	AMD EPYC 7402	EPYC, 7402, 512G	jhub	2024-11
+max-wng010	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng011	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng012	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng013	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng014	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng015	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng016	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng017	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng018	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng019	40 (2/10/2)	704	376GB	1xGV100GL	7000	Silver 4114 CPU @ 2.20GHz	INTEL, Silver-4114, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2023-12
+max-wng020	40 (2/10/2)	768	376GB	2xGV100GL	14000	Gold 5115 CPU @ 2.40GHz	INTEL, Gold-5115, 384G, GPU, GPUx2, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2024-06
+max-wng021	40 (2/10/2)	768	376GB	2xGV100GL	14000	Gold 5115 CPU @ 2.40GHz	INTEL, Gold-5115, 384G, GPU, GPUx2, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2024-06
+max-wng022	64 (2/16/2)	1126	376GB	1xGV100GL	7000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2024-11
+max-wng023	64 (2/16/2)	1126	376GB	1xGV100GL	7000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 384G, GPU, GPUx1, V100, V100-PCIE-32GB	maxgpu allgpu allrsv	2024-11
+max-wng025	40 (2/10/2)	768	376GB	1xGV100GL	7000	Silver 4210 CPU @ 2.20GHz	INTEL, Silver-4210, 384G, BS, GPU, GPUx1, V100, V100S-PCIE-32GB	maxgpu allgpu allrsv	2025-10
+max-wng026	40 (2/10/2)	768	376GB	1xGV100GL	7000	Silver 4210 CPU @ 2.20GHz	INTEL, Silver-4210, 384G, BS, GPU, GPUx1, V100, V100S-PCIE-32GB	maxgpu allgpu allrsv	2025-10
+max-wng027	40 (2/10/2)	768	376GB	1xGV100GL	7000	Silver 4210 CPU @ 2.20GHz	INTEL, Silver-4210, 384G, BS, GPU, GPUx1, V100, V100S-PCIE-32GB	maxgpu allgpu allrsv	2025-10
+max-wng028	40 (2/10/2)	768	376GB	1xGV100GL	7000	Silver 4210 CPU @ 2.20GHz	INTEL, Silver-4210, 384G, BS, GPU, GPUx1, V100, V100S-PCIE-32GB	maxgpu allgpu allrsv	2025-10
+max-wng029	40 (2/10/2)	768	376GB	1xGV100GL	7000	Silver 4210 CPU @ 2.20GHz	INTEL, Silver-4210, 384G, BS, GPU, GPUx1, V100, V100S-PCIE-32GB	maxgpu allgpu allrsv	2025-10
+max-wng030	40 (2/10/2)	768	376GB	1xGV100GL	7000	Silver 4210 CPU @ 2.20GHz	INTEL, Silver-4210, 384G, BS, GPU, GPUx1, V100, V100S-PCIE-32GB	maxgpu allgpu allrsv	2025-10
+max-wng031	64 (2/16/2)	1126	376GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 384G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-10
+max-wng032	64 (2/16/2)	1126	376GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 384G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-10
+max-wng033	64 (2/16/2)	1126	376GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 384G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-10
+max-wng034	64 (2/16/2)	1126	376GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 384G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-10
+max-wng035	64 (2/16/2)	1126	376GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 384G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-10
+max-wng036	64 (2/16/2)	1126	376GB	2xGV100GL	14000	Silver 4216 CPU @ 2.10GHz	INTEL, Silver-4216, 384G, BS, GPU, GPUx2, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-10
+max-wng037	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-11
+max-wng038	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-11
+max-wng039	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-11
+max-wng040	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-11
+max-wng041	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-11
+max-wng042	72 (2/18/2)	1844	376GB	4xGV100GL	28000	Gold 6240 CPU @ 2.60GHz	INTEL, Gold-6240, 384G, BS, GPU, GPUx4, V100, V100-SXM2-32GB	maxgpu allgpu allrsv	2025-11
+max-wng043	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu allrsv	n/a
+max-wng044	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu allrsv	n/a
+max-wng045	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu allrsv	n/a
+max-wng046	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu allrsv	n/a
+max-wng047	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu allrsv	n/a
+max-wng048	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu allrsv	n/a
+max-wng049	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu allrsv	n/a
+max-wng050	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu allrsv	n/a
+max-wng051	128 (2/32/2)	1894	512GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB	maxgpu allgpu allrsv	n/a
+max-wng052	192 (2/48/2)	2795	1007GB	4xGA100	38800	AMD EPYC 7643	EPYC, 7643, 1024G, GPU, GPUx4, A100, A100-SXM4-80GB	maxgpu allgpu allrsv	n/a
+max-wng053	192 (2/48/2)	2795	1007GB	4xGA100	38800	AMD EPYC 7643	EPYC, 7643, 1024G, GPU, GPUx4, A100, A100-SXM4-80GB	maxgpu allgpu allrsv	n/a
+max-wng054	128 (2/32/2)	1894	1007GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 1024G, GPU, GPUx1, A100, A100-PCIE-80GB	maxgpu allgpu allrsv	2027-02
+max-wng055	128 (2/32/2)	1894	1007GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 1024G, GPU, GPUx1, A100, A100-PCIE-80GB	maxgpu allgpu allrsv	2027-02
+max-wng056	128 (2/32/2)	1894	1007GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 1024G, GPU, GPUx1, A100, A100-PCIE-80GB	maxgpu allgpu allrsv	2027-02
+max-wng057	128 (2/32/2)	1894	1007GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 1024G, GPU, GPUx1, A100, A100-PCIE-80GB	maxgpu allgpu allrsv	2027-02
+max-wng058	128 (2/32/2)	1894	1007GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 1024G, GPU, GPUx1, A100, A100-PCIE-80GB	maxgpu allgpu allrsv	2027-02
+max-wng059	128 (2/32/2)	1894	1007GB	1xGA100	9700	AMD EPYC 7543	EPYC, 7543, 1024G, GPU, GPUx1, A100, A100-PCIE-80GB	maxgpu allgpu allrsv	2027-02
+max-wng060	192 (2/48/2)	2795	1007GB	4xGA100	38800	AMD EPYC 7643	EPYC, 7643, 1024G, GPU, GPUx4, A100, A100-SXM4-80GB	maxgpu allgpu allrsv	2026-12
+max-wng061	192 (2/48/2)	2795	1007GB	4xGA100	38800	AMD EPYC 7643	EPYC, 7643, 1024G, GPU, GPUx4, A100, A100-SXM4-80GB	maxgpu allgpu allrsv	2026-12
+max-wng062	192 (2/48/2)	2795	1007GB	4xGA100	38800	AMD EPYC 7643	EPYC, 7643, 1024G, GPU, GPUx4, A100, A100-SXM4-80GB	maxgpu allgpu allrsv	2026-12
+max-wng063	128 (2/32/2)	1867	512GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 512G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	psgpu maxgpu allgpu allrsv	2027-12
+max-wng064	128 (2/32/2)	1867	512GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 512G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	psgpu maxgpu allgpu allrsv	2027-12
+max-wng065	128 (2/32/2)	1867	512GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 512G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	maxgpu allgpu allrsv	2027-12
+max-wng066	128 (2/32/2)	1867	256GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 256G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	maxgpu allgpu allrsv	2027-12
+max-wng067	128 (2/32/2)	1867	256GB	1xGA100	9700	AMD EPYC 7513	EPYC, 7513, 256G, BS, GPU, GPUx1, A100, A100-PCIE-80GB	maxgpu allgpu allrsv	2027-12
+max-wng068	96 (2/24/2)	1536	768GB	2xGH100	68000	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx2, H100, H100-NVL-96GB	maxgpu allgpu allrsv	2029-07
+max-wng069	96 (2/24/2)	1536	768GB	2xGH100	68000	Gold 6442Y	INTEL, Gold-6442Y, 768G, BS, GPU, GPUx2, H100, H100-NVL-96GB	maxgpu allgpu allrsv	2029-07
+max-xuv001	48 (2/12/2)	998	376GB	0	0	Silver 4214 CPU @ 2.20GHz	INTEL, Silver-4214, 384G	maxcpu allcpu	2025-02
