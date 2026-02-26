@@ -131,11 +131,16 @@ def get_node_description():
 def get_all_nodes(partition=None):
 	init_node_cache()
 	if partition is not None:
-		# Filter ALL_NODES based on partition
-		partitioned_nodes = []
-		for node in _node_cache:
-			if partition in node['Partitions']:
-				partitioned_nodes.append(node['Host'])
+		# Filter ALL_NODES based on partition which can be string or list
+		partitions = []
+		if isinstance(partition, str):
+			partitions = [p.strip() for p in partition.split(',')]
+		elif not isinstance(partition, (list, tuple, set)):
+			partitions = list(partition)
+		else:
+			raise ValueError(f"Invalid partition type: {type(partition)}")
+		# Collect nodes that belong to any of the specified partitions
+		partitioned_nodes = [ node['Host'] for node in _node_cache if any(part in node['Partitions'] for part in partitions)]
 		return partitioned_nodes
 	else:
 		return ALL_NODES
@@ -240,8 +245,16 @@ def nodes_from_string(nodesStr):
 # Get list of nodes in the partition (using sinfo)
 def get_live_nodes(partition = None, idle_only = False):
 	sinfo_cmd = ["sinfo"]
+	partitions = []
 	if partition is not None:
-		sinfo_cmd = ["sinfo", "-p", partition]
+		partitions = []
+		if isinstance(partition, str):
+			partitions = [p.strip() for p in partition.split(',')]
+		elif not isinstance(partition, (list, tuple, set)):
+			partitions = list(partition)
+		else:
+			raise ValueError(f"Invalid partition type: {type(partition)}")
+		sinfo_cmd = ["sinfo", "-p", ",".join(partitions)]
 	sinfo_output = run_command(sinfo_cmd)
 	nodes = []
 	for line in sinfo_output.splitlines()[1:]:	# Skip header
@@ -260,7 +273,7 @@ def main():
 	for node in maxwell_nodes:
 		for gpu in node['GPU']:
 			gpu_hardware.append(gpu)
-	gpu_hardware = list(set(gpu_hardware))	# Unique GPU types	
+	gpu_hardware = list(set(gpu_hardware))# Unique GPU types	
 			#Differentiate CPU only nodes later
 # For nodes not in gpuall we list CPU architectures
 	cpu_nodes = []
@@ -272,7 +285,7 @@ def main():
 	cpu_hardware = []
 	for node in cpu_nodes:
 		cpu_hardware.append(node['CPU'])
-	cpu_hardware = list(set(cpu_hardware))	# Unique CPU types
+	cpu_hardware = list(set(cpu_hardware))# Unique CPU types
 	print("Available CPU architectures on non-GPU nodes:")
 	pprint.pprint(cpu_hardware)
 

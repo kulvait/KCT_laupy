@@ -155,7 +155,7 @@ def main():
     parser.add_argument("--slurm-dir", type=str, help="Working directory, shall be subdirectory of the root dir (defaults to 'wd')", default="sbatch")
     parser.add_argument("-p", "--pattern", type=str, help="Pattern for directory matching")
     parser.add_argument("-a", "--slurmargs", type=str, help="Additional SLURM arguments")
-    parser.add_argument("-f", "--partition", type=str, help="Partition to use (defaults to 'allgpu')", default="allgpu")
+    parser.add_argument("-f", "--partition", type=str, help="Partition to use (defaults to 'allcpu,allgpu')", default="allcpu,allgpu")
     parser.add_argument("-n", "--nodelist", type=str, help="Specify node list")
     parser.add_argument("-o", "--oversubscribe", action="store_true", help="Allow oversubscription")
     parser.add_argument("-t", "--delaytime", type=int, help="Delay time in seconds before the next submit", default=0)
@@ -200,6 +200,13 @@ def main():
         print(f"SLURM script directory {SBATCH_DIR_REL} does not exist or is not a directory.", out=sys.stderr)
         sys.exit(1)
 
+    #If --partition is not set by the user and --gpu-nodes is requested, set partition to "algpu"
+    partition_was_user_set = any(arg in ("-f", "--partition") for arg in sys.argv)
+    if ARG.gpu_nodes and not partition_was_user_set:
+        ARG.partition = "algpu"
+        print("GPU nodes requested without explicit -f/--partition, setting partition to 'algpu'")
+
+
      # Check if script exists
     SCRIPTNAME = ARG.scriptName
     SCRIPT_ABS = os.path.join(SBATCH_DIR_ABS, SCRIPTNAME)
@@ -216,7 +223,6 @@ def main():
 
     SLURM_ARGS_LIST = []
     # Node list handling
-    live_nodes = maxwell.get_live_nodes(partition=ARG.partition, idle_only=False)
     node_list = []
     excluded_node_list = []
     
@@ -246,8 +252,7 @@ def main():
     if ARG.oversubscribe:
         SLURM_ARGS_LIST.append("--oversubscribe")
 
-    if ARG.partition != "allgpu":
-        SLURM_ARGS_LIST.append(f"--partition={ARG.partition}")
+    SLURM_ARGS_LIST.append(f"--partition={ARG.partition}")
 
     for subdir in subdirs:
         SUBDIR_ABS = os.path.join(WD_PATH_ABS, subdir)

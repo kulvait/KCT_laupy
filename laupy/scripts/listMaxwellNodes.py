@@ -84,7 +84,7 @@ def main():
     # Argument parsing
     parser = argparse.ArgumentParser(description="Filter nodes based on categories")
     parser.add_argument('-i', '--idle', action='store_true', help="Select only idle nodes")
-    parser.add_argument('-p', '--partition', type=str, default="allgpu", help="Partition to query (default: 'allgpu')")
+    parser.add_argument('-p', '--partition', type=str, default="allcpu,allgpu", help="Partition to query (default: 'allcpu,allgpu')")
     parser.add_argument('-a', '--all-nodes', action='store_true', help="Select all nodes (default)")
     parser.add_argument('-g', '--gpu-nodes', action='store_true', help="Select only nodes with GPUs")
     parser.add_argument('-s', '--strong-nodes', action='store_true', help="Select strong nodes")
@@ -106,8 +106,7 @@ def main():
         EXCELENT = STRONG = WEAK = False
 
     # Get list of all nodes from sinfo
-    all_nodes = get_all_nodes(ARG.partition, ARG.idle)
-    all_node_array = get_node_array(all_nodes)
+    all_node_array = maxwell.get_live_nodes(ARG.partition, ARG.idle)
     
     node_array = []
 
