@@ -200,11 +200,11 @@ def main():
         print(f"SLURM script directory {SBATCH_DIR_REL} does not exist or is not a directory.", out=sys.stderr)
         sys.exit(1)
 
-    #If --partition is not set by the user and --gpu-nodes is requested, set partition to "algpu"
+    #If --partition is not set by the user and --gpu-nodes is requested, set partition to "allgpu"
     partition_was_user_set = any(arg in ("-f", "--partition") for arg in sys.argv)
     if ARG.gpu_nodes and not partition_was_user_set:
-        ARG.partition = "algpu"
-        print("GPU nodes requested without explicit -f/--partition, setting partition to 'algpu'")
+        ARG.partition = "allgpu"
+        print("GPU nodes requested without explicit -f/--partition, setting partition to 'allgpu'")
 
 
      # Check if script exists
