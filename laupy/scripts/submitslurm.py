@@ -24,6 +24,9 @@ def save_dag(subdir_abs, dag):
     with open(dag_file, "w") as f:
         json.dump(dag, f, indent=2)
 
+def clean_dag(subdir_abs):
+    save_dag(subdir_abs, [])  # Just overwrite with an empty list to clear the DAG
+
 import subprocess
 
 def get_active_dependencies(job_ids, raise_on_fail=False):
@@ -174,12 +177,18 @@ def main():
     parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
     parser.add_argument("--dry-run", action="store_true", help="Simulate the submission without actually submitting jobs or crating files")
     parser.add_argument("--pipeline-step", type=int, default=-1, help="Pipeline step number to create DAGs for")
-    parser.add_argument("--create-pipeline-only", action="store_true", help="Only create pipeline scripts without submitting jobs")
-    parser.add_argument("--delete-pipeline-only", action="store_true", help="Only create pipeline scripts without submitting jobs")
-    parser.add_argument("scriptName", type=str, help="Script to execute in each working directory")
+    # ---- Pipeline management: mutually exclusive subgroup ----
+    pipeline_group = parser.add_mutually_exclusive_group()
+    pipeline_group.add_argument("--create-pipeline-only", action="store_true", help="Create only the pipeline scripts/DAG and exit (scriptName not required).")
+    pipeline_group.add_argument("--clean-dag", action="store_true", help="Clean DAG entries for the specified pipeline (scriptName not required).")
+    pipeline_group.add_argument("--delete-pipeline-only", action="store_true", help="Delete existing pipeline/DAG artifacts and exit (scriptName not required).")
+    parser.add_argument("scriptName", type=str, nargs="?", help="Script to execute in each working directory")
 
     # Parse the arguments
     ARG = parser.parse_args()
+    pipeline_mode = ARG.create_pipeline_only or ARG.clean_dag or ARG.delete_pipeline_only
+    if not pipeline_mode and ARG.scriptName is None:
+        parser.error("scriptName is required unless using --create-pipeline-only, --clean-dag, or --delete-pipeline-only.")
     if ARG.root_dir is None:
         ROOTDIR = Path.cwd()
     else:
@@ -216,19 +225,20 @@ def main():
 
 
      # Check if script exists
-    SCRIPTNAME = ARG.scriptName
-    SCRIPT_ABS = os.path.join(SBATCH_DIR_ABS, SCRIPTNAME)
-    SCRIPT_REL = os.path.join(SBATCH_DIR_REL, SCRIPTNAME)
-    if not os.path.isfile(SCRIPT_ABS):
-        print(f"Script {SCRIPT_REL} does not exist.", out=sys.stderr)
-        sys.exit(1)
+    if not pipeline_mode:
+        SCRIPTNAME = ARG.scriptName
+        SCRIPT_ABS = os.path.join(SBATCH_DIR_ABS, SCRIPTNAME)
+        SCRIPT_REL = os.path.join(SBATCH_DIR_REL, SCRIPTNAME)
+        if not os.path.isfile(SCRIPT_ABS):
+            print(f"Script {SCRIPT_REL} does not exist.", out=sys.stderr)
+            sys.exit(1)
 
     subdirs = []
     for wd_abs, wd_rel in zip(WD_PATH_ABS, WD_PATH_REL):
         for subdir in wd_abs.iterdir():
             if subdir.is_dir() or ( subdir.is_symlink() and subdir.resolve().is_dir() ):
                 if ARG.pattern is None or ARG.pattern.lower() in subdir.name.lower():
-                    subdirs.append({ "subdir": subdir.name, "subdir_abs": subdir.resolve(), "subdir_rel": os.path.relpath(subdir.resolve(), ROOTDIR) })
+                    subdirs.append({ "subdir": subdir.name, "subdir_abs": str(subdir.resolve()), "subdir_rel": str(os.path.relpath(subdir.resolve(), ROOTDIR)) })
     SLURM_ARGS_LIST = []
     # Node list handling
     node_list = []
@@ -263,38 +273,43 @@ def main():
     SLURM_ARGS_LIST.append(f"--partition={ARG.partition}")
 
     for subdir_dct in subdirs:
-        print(f"Preparing SLURM submission for beamtime: {subdir_dct['subdir_abs']}")
         subdir = subdir_dct["subdir"]
         SUBDIR_ABS = subdir_dct["subdir_abs"]
         SUBDIR_REL = subdir_dct["subdir_rel"]
         # Create job name
-        SCRIPTNAME_NOEXT = os.path.splitext(SCRIPTNAME)[0]
-        JOBNAME = f"{SCRIPTNAME_NOEXT}_{subdir}"
-        if ARG.delaytime > 0:
-            time.sleep(ARG.delaytime)
-        SLURM_CMD = ["sbatch"] + SLURM_ARGS_LIST + [f"--job-name={JOBNAME}"]
-        SLURM_CMD += ["--output=" + os.path.join(SUBDIR_REL, "pipeline", "log", f"{SCRIPTNAME_NOEXT}-%N-%j.out")]
-        SLURM_CMD += ["--error=" + os.path.join(SUBDIR_REL, "pipeline", "log", f"{SCRIPTNAME_NOEXT}-%N-%j.err")]
-        EXEC_CMD_REL = [SCRIPT_REL, SUBDIR_REL]
-        EXEC_CMD_ABS = [SCRIPT_ABS, SUBDIR_ABS]
-        if ARG.slurmargs:
-            EXEC_CMD_REL.extend(shlex.split(ARG.slurmargs))
-            EXEC_CMD_ABS.extend(shlex.split(ARG.slurmargs))
-        SLURM_CMD_REL = SLURM_CMD.copy() + EXEC_CMD_REL
-        SLURM_CMD_ABS = SLURM_CMD.copy() + EXEC_CMD_ABS
-        SLURM_CMD = SLURM_CMD_REL
-        print(" ".join(SLURM_CMD))
+        if not pipeline_mode:
+            SCRIPTNAME_NOEXT = os.path.splitext(SCRIPTNAME)[0]
+            JOBNAME = f"{SCRIPTNAME_NOEXT}_{subdir}"
+            if ARG.delaytime > 0:
+                time.sleep(ARG.delaytime)
+            SLURM_CMD = ["sbatch"] + SLURM_ARGS_LIST + [f"--job-name={JOBNAME}"]
+            SLURM_CMD += ["--output=" + os.path.join(SUBDIR_REL, "pipeline", "log", f"{SCRIPTNAME_NOEXT}-%N-%j.out")]
+            SLURM_CMD += ["--error=" + os.path.join(SUBDIR_REL, "pipeline", "log", f"{SCRIPTNAME_NOEXT}-%N-%j.err")]
+            EXEC_CMD_REL = [SCRIPT_REL, SUBDIR_REL]
+            EXEC_CMD_ABS = [SCRIPT_ABS, SUBDIR_ABS]
+            if ARG.slurmargs:
+                EXEC_CMD_REL.extend(shlex.split(ARG.slurmargs))
+                EXEC_CMD_ABS.extend(shlex.split(ARG.slurmargs))
+            SLURM_CMD_REL = SLURM_CMD.copy() + EXEC_CMD_REL
+            SLURM_CMD_ABS = SLURM_CMD.copy() + EXEC_CMD_ABS
+            SLURM_CMD = SLURM_CMD_REL
+            print(f"SLURM in {subdir_dct['subdir_abs']}")
+            print(" ".join(SLURM_CMD))
         if not ARG.dry_run:
             PIPELINE_DIR = os.path.join(SUBDIR_ABS, "pipeline")
             PIPELINE_LOG_DIR = os.path.join(PIPELINE_DIR, "log")
             if ARG.delete_pipeline_only:
                 #Delete pipeline directory if requested
+                print(f"In {subdir_dct['subdir_abs']}, deleting pipeline directory {PIPELINE_DIR} and all its contents (logs, DAGs, scripts)")
                 removePipelineDir(PIPELINE_DIR)
+            elif ARG.clean_dag:
+                #Clean DAG entries for the specified pipeline to resolve failed dependencies without creating new pipeline scripts or submitting jobs
+                print(f"In {subdir_dct['subdir_abs']}, cleaning DAG file pipeline/dag.json")
+                clean_dag(SUBDIR_ABS)
             else:
                 os.makedirs(PIPELINE_LOG_DIR, exist_ok=True)
                 #Append command to pipeline/exec.sh
-                appendCommand(EXEC_CMD_ABS, os.path.join(SUBDIR_ABS, "pipeline", "exec.sh"))
-            if not ARG.create_pipeline_only and not ARG.delete_pipeline_only:
+            if not ARG.create_pipeline_only and not ARG.delete_pipeline_only and not ARG.clean_dag:
                 DAG = load_dag(SUBDIR_ABS)
                 if ARG.pipeline_step > -1:
                     dependency_ids = [ entry["job_id"] for entry in DAG if entry["step"] != -1 and entry["step"] < ARG.pipeline_step and "job_id" in entry ]
@@ -318,6 +333,7 @@ def main():
                         DAG_ENTRY = { "step": ARG.pipeline_step, "job_id": int(SLURMID.split()[-1]) , "timestamp": time.time() , "slurm_command": " ".join(SLURM_CMD_ABS), "command": " ".join(EXEC_CMD_ABS), "dependencies": active_dependencies if len(dependency_ids) > 0 else [] }
                         DAG.append(DAG_ENTRY)
                         save_dag(SUBDIR_ABS, DAG)
+                        appendCommand(EXEC_CMD_ABS, os.path.join(SUBDIR_ABS, "pipeline", "exec.sh"))
                     except RuntimeError as e:
                         print(f"Not submitting job for {SUBDIR_REL} due to failed dependency: {e}")
                         continue
