@@ -161,12 +161,6 @@ def main():
     # Define command-line arguments
     parser.add_argument("-d", "--root-dir", type=str, help="Root directory (defaults to current directory)", default=None)
     parser.add_argument("-w", "--working-dir", type=parse_comma_separated, action="append", required=False, help="One or more working directories. Can be comma-separated or repeated. Defaults to wd.", default=None)
-    "-w",
-    action="append",
-    required=True,
-    help="One or more working directories. Can be comma-separated or repeated."
-)
-
     parser.add_argument("--slurm-dir", type=str, help="Working directory, shall be subdirectory of the root dir (defaults to 'wd')", default="sbatch")
     parser.add_argument("-p", "--pattern", type=str, help="Pattern for directory matching")
     parser.add_argument("-a", "--slurmargs", type=str, help="Additional SLURM arguments")
@@ -199,9 +193,9 @@ def main():
     WD_PATH_ABS = [ d.resolve() if d.is_absolute() else (Path(ROOTDIR) / d).resolve() for d in WD ]
     WD_PATH_REL = [ os.path.relpath(abs_path, ROOTDIR) for abs_path in WD_PATH_ABS ]
     for wd, wd_abs, wd_rel in zip(WD, WD_PATH_ABS, WD_PATH_REL):
-    if not wd.is_dir() or ( wd.is_symlink() and not wd.resolve().is_dir() ):
-        print(f"Working directory {wd_rel} does not exist or is not a directory.", out=sys.stderr)
-        sys.exit(1)
+        if not wd.is_dir() or ( wd.is_symlink() and not wd.resolve().is_dir() ):
+            print(f"Working directory {wd_rel} does not exist or is not a directory.", out=sys.stderr)
+            sys.exit(1)
     # Normalize SLURM script directory path
     SBATCH_DIR = Path(ARG.slurm_dir)
     if SBATCH_DIR.is_absolute():
@@ -234,7 +228,7 @@ def main():
         for subdir in wd_abs.iterdir():
             if subdir.is_dir() or ( subdir.is_symlink() and subdir.resolve().is_dir() ):
                 if ARG.pattern is None or ARG.pattern.lower() in subdir.name.lower():
-                    subdirs.append(subdir.name)
+                    subdirs.append({ "subdir": subdir.name, "subdir_abs": subdir.resolve(), "subdir_rel": os.path.relpath(subdir.resolve(), ROOTDIR) })
     SLURM_ARGS_LIST = []
     # Node list handling
     node_list = []
@@ -268,9 +262,11 @@ def main():
 
     SLURM_ARGS_LIST.append(f"--partition={ARG.partition}")
 
-    for subdir in subdirs:
-        SUBDIR_ABS = os.path.join(WD_PATH_ABS, subdir)
-        SUBDIR_REL = os.path.join(WD_PATH_REL, subdir)
+    for subdir_dct in subdirs:
+        print(f"Preparing SLURM submission for beamtime: {subdir_dct['subdir_abs']}")
+        subdir = subdir_dct["subdir"]
+        SUBDIR_ABS = subdir_dct["subdir_abs"]
+        SUBDIR_REL = subdir_dct["subdir_rel"]
         # Create job name
         SCRIPTNAME_NOEXT = os.path.splitext(SCRIPTNAME)[0]
         JOBNAME = f"{SCRIPTNAME_NOEXT}_{subdir}"
