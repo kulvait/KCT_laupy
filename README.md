@@ -68,7 +68,7 @@ pip install --user --upgrade .
 
 For a local development editable upgrade from the git directory:
 
-```bashgit pull
+```bash
 pip install --user --upgrade --editable .
 ``` 
 
