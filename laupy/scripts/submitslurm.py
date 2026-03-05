@@ -146,12 +146,27 @@ def removePipelineDir(pipeline_dir):
     except OSError:
         print(f"Pipeline directory {pipeline_dir} not empty (other subdirs preserved).")
 
+def parse_comma_separated(value):
+    """
+    Parse a comma-separated string into a list of strings.
+    
+    Example:
+    "dir1,dir2,dir3" -> ["dir1", "dir2", "dir3"]
+    """
+    return [item.strip() for item in value.split(",") if item.strip()]
+
 def main():
     parser = argparse.ArgumentParser(description="Submit jobs to SLURM.")
     
     # Define command-line arguments
     parser.add_argument("-d", "--root-dir", type=str, help="Root directory (defaults to current directory)", default=None)
-    parser.add_argument("-w", "--working-dir", type=str, help="Working directory, shall be subdirectory of the root dir (defaults to 'wd')", default="wd")
+    parser.add_argument("-w", "--working-dir", type=parse_comma_separated, action="append", required=False, help="One or more working directories. Can be comma-separated or repeated. Defaults to wd.", default=None)
+    "-w",
+    action="append",
+    required=True,
+    help="One or more working directories. Can be comma-separated or repeated."
+)
+
     parser.add_argument("--slurm-dir", type=str, help="Working directory, shall be subdirectory of the root dir (defaults to 'wd')", default="sbatch")
     parser.add_argument("-p", "--pattern", type=str, help="Pattern for directory matching")
     parser.add_argument("-a", "--slurmargs", type=str, help="Additional SLURM arguments")
@@ -179,14 +194,13 @@ def main():
     print(f"Changing to root directory: {ROOTDIR}")
     os.chdir(ROOTDIR)
     # Normalize working directory path
-    WD = Path(ARG.working_dir)
-    if WD.is_absolute():
-        WD_PATH_ABS = WD.resolve()
-    else:
-        WD_PATH_ABS = (Path(ROOTDIR) / ARG.working_dir).resolve()
-    WD_PATH_REL = os.path.relpath(WD_PATH_ABS, ROOTDIR)
-    if not WD.is_dir() or WD.is_symlink() and not WD.resolve().is_dir():
-        print(f"Working directory {WD_PATH_REL} does not exist or is not a directory.", out=sys.stderr)
+    working_dirs = ["wd"] if ARG.working_dir is None else [ d for group in ARG.working_dir for d in group ]
+    WD = [Path(d) for d in working_dirs]
+    WD_PATH_ABS = [ d.resolve() if d.is_absolute() else (Path(ROOTDIR) / d).resolve() for d in WD ]
+    WD_PATH_REL = [ os.path.relpath(abs_path, ROOTDIR) for abs_path in WD_PATH_ABS ]
+    for wd, wd_abs, wd_rel in zip(WD, WD_PATH_ABS, WD_PATH_REL):
+    if not wd.is_dir() or ( wd.is_symlink() and not wd.resolve().is_dir() ):
+        print(f"Working directory {wd_rel} does not exist or is not a directory.", out=sys.stderr)
         sys.exit(1)
     # Normalize SLURM script directory path
     SBATCH_DIR = Path(ARG.slurm_dir)
@@ -216,11 +230,11 @@ def main():
         sys.exit(1)
 
     subdirs = []
-    for subdir in WD_PATH_ABS.iterdir():
-        if subdir.is_dir() or ( subdir.is_symlink() and subdir.resolve().is_dir() ):
-            if ARG.pattern is None or ARG.pattern.lower() in subdir.name.lower():
-                subdirs.append(subdir.name)
-
+    for wd_abs, wd_rel in zip(WD_PATH_ABS, WD_PATH_REL):
+        for subdir in wd_abs.iterdir():
+            if subdir.is_dir() or ( subdir.is_symlink() and subdir.resolve().is_dir() ):
+                if ARG.pattern is None or ARG.pattern.lower() in subdir.name.lower():
+                    subdirs.append(subdir.name)
     SLURM_ARGS_LIST = []
     # Node list handling
     node_list = []
