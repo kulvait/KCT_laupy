@@ -230,7 +230,7 @@ def main():
         SCRIPT_ABS = os.path.join(SBATCH_DIR_ABS, SCRIPTNAME)
         SCRIPT_REL = os.path.join(SBATCH_DIR_REL, SCRIPTNAME)
         if not os.path.isfile(SCRIPT_ABS):
-            print(f"Script {SCRIPT_REL} does not exist.", out=sys.stderr)
+            print(f"Script {SCRIPT_REL} does not exist.", file=sys.stderr)
             sys.exit(1)
 
     subdirs = []
