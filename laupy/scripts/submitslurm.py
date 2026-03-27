@@ -178,6 +178,7 @@ def main():
     parser.add_argument("-s", "--strong-nodes", action="store_true", help="Use strong nodes only")
     parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
     parser.add_argument("--dry-run", action="store_true", help="Simulate the submission without actually submitting jobs or crating files")
+    parser.add_argument("--verbose", action="store_true", help="Print detailed information about the submission process")
     parser.add_argument("--pipeline-step", type=int, default=-1, help="Pipeline step number to create DAGs for")
     # ---- Pipeline management: mutually exclusive subgroup ----
     pipeline_group = parser.add_mutually_exclusive_group()
@@ -188,6 +189,11 @@ def main():
 
     # Parse the arguments
     ARG = parser.parse_args()
+    if ARG.verbose:
+        print("Parsed arguments:")
+        for arg_name, arg_value in vars(ARG).items():
+            print(f"  {arg_name}: {arg_value}")
+
     pipeline_mode = ARG.create_pipeline_only or ARG.clean_dag or ARG.delete_pipeline_only
     if not pipeline_mode and ARG.scriptName is None:
         parser.error("scriptName is required unless using --create-pipeline-only, --clean-dag, or --delete-pipeline-only.")
@@ -241,6 +247,13 @@ def main():
             if subdir.is_dir() or ( subdir.is_symlink() and subdir.resolve().is_dir() ):
                 if ARG.pattern is None or ARG.pattern.lower() in subdir.name.lower():
                     subdirs.append({ "subdir": subdir.name, "subdir_abs": str(subdir.resolve()), "subdir_rel": str(os.path.relpath(subdir.resolve(), ROOTDIR)) })
+
+    if len(subdirs) == 0:
+        if ARG.pattern is not None:
+            print("No subdirectories of %s match the specified pattern '%s'." % (", ".join(WD_PATH_REL), ARG.pattern), file=sys.stderr)
+        else:
+            print("No subdirectories of %s found." % (", ".join(WD_PATH_REL)), file=sys.stderr)
+        sys.exit(1)
     SLURM_ARGS_LIST = []
     # Node list handling
     node_list = []
@@ -269,12 +282,20 @@ def main():
             excluded_node_list = list(set(excluded_node_list).intersection(set(live_nodes)))
             SLURM_ARGS_LIST.append(f"--exclude={','.join(excluded_node_list)}")
 
+    if ARG.verbose:
+        if len(node_list) == 0:
+            print("No valid nodes found based on the specified criteria. Submitting without node restrictions.")
+        else:
+            print(f"Submitting to nodes: {','.join(node_list)}")
+
     if ARG.oversubscribe:
         SLURM_ARGS_LIST.append("--oversubscribe")
 
     SLURM_ARGS_LIST.append(f"--partition={ARG.partition}")
 
     for subdir_dct in subdirs:
+        if ARG.verbose:
+            print(f"Processing subdir: {subdir_dct['subdir_rel']} (abs: {subdir_dct['subdir_abs']})")
         subdir = subdir_dct["subdir"]
         SUBDIR_ABS = subdir_dct["subdir_abs"]
         SUBDIR_REL = subdir_dct["subdir_rel"]
