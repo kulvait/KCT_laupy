@@ -52,7 +52,7 @@ def get_active_dependencies(job_ids, raise_on_fail=False):
         try:
             # Query job state using sacct
             result = subprocess.run(
-                ["sacct", "-j", str(job_id), "--format=State", "--noheader", "--parsable2"],
+                ["sacct", "-j", str(job_id), "--format=JobName,State", "--noheader", "--parsable2"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -62,20 +62,22 @@ def get_active_dependencies(job_ids, raise_on_fail=False):
                 # Job not found; treat as finished
                 continue
 
-            # Take first line, could be multiple steps
-            status = status_lines[0].split('|')[0]
+            # Take first line, could be multiple steps but we care about the main job state
+            fields = status_lines[0].split('|')
+            job_name = fields[0]
+            status = fields[1]
             
             if status in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
                 active_ids.append(job_id)
             elif status in ("FAILED", "CANCELLED", "TIMEOUT"):
-                msg = f"Dependency job {job_id} has status {status}"
+                msg = f"Dependency job {job_name}, ID={job_id} has failed with status {status}"
                 if raise_on_fail:
                     raise RuntimeError(msg)
                 else:
                     print("WARNING:", msg)
             else:
                 if status not in ("COMPLETED"):
-                    print(f"WARNING: Job {job_id} has unexpected status {status}")
+                    print(f"WARNING: Job {job_name}, ID={job_id} has unexpected status {status}. Treating as finished.")
             # Else, COMPLETED or other terminal state -> ignore
         except Exception as e:
             print(f"Error checking SLURM job {job_id}: {e}")
