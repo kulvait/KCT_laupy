@@ -57,7 +57,7 @@ pip install --user --upgrade -e .
 To update the package, use
 
 ```bash
-pip install --upgrade git+https://github.com/kulvait/KCT_denpy.git
+pip install --upgrade git+https://github.com/kulvait/KCT_laupy.git
 ```
 
 For a local upgrade from the git directory:

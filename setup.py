@@ -5,8 +5,7 @@ from setuptools import setup
 #Look here https://stackoverflow.com/questions/458550/standard-way-to-embed-version-into-python-package
 exec(open('laupy/version.py').read())
 
-petra_requires = ['h5py', 'pandas']
-script_requires = ['argparse']
+pkg_requires = ['termcolor', 'psutil']
 
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
@@ -17,11 +16,12 @@ setup(
     # Needed to actually package something
     packages=['laupy'],
     # Needed for dependencies
-    install_requires=script_requires,
+    install_requires=pkg_requires,
     entry_points={
     'console_scripts': [
         'listnodes =  laupy.scripts.listMaxwellNodes:main',
         'submitslurm =  laupy.scripts.submitslurm:main',
+        'kct-list =  laupy.scripts.kct-list:main',
    ]
     },
     # *strongly* suggested for sharing
