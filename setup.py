@@ -3,7 +3,11 @@ from setuptools import setup
 #Following https://uoftcoders.github.io/studyGroup/lessons/python/packages/lesson/
 
 #Look here https://stackoverflow.com/questions/458550/standard-way-to-embed-version-into-python-package
-exec(open('laupy/version.py').read())
+try:
+	exec(open('laupy/version.py').read())
+except FileNotFoundError:
+	print('version.py not found, using default version 0.0.0')
+	__version__ = '0.0.0'
 
 pkg_requires = ['termcolor', 'psutil']
 
@@ -21,8 +25,8 @@ setup(
     'console_scripts': [
         'listnodes =  laupy.scripts.listMaxwellNodes:main',
         'submitslurm =  laupy.scripts.submitslurm:main',
-        'kct-list =  laupy.scripts.kct-list:main',
-   ]
+        'kct-list =  laupy.scripts.kctList:main',
+    ]
     },
     # *strongly* suggested for sharing
     version=__version__,

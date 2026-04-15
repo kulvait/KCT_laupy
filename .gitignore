@@ -1,7 +1,6 @@
 *.pic
-__pycache__
-laupy.egg-info
-build
-dist
 *.egg
 *.egg-info
+__pycache__
+build
+dist

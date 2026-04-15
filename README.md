@@ -48,7 +48,7 @@ For an editable local install from the git directory, use the following command
 
 ```bash
 git clone https://github.com/kulvait/KCT_laupy.git
-cd KCT_denpy
+cd KCT_laupy
 pip install --user --upgrade -e .
 ```
 
