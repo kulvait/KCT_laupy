@@ -26,6 +26,7 @@ setup(
         'listnodes =  laupy.scripts.listMaxwellNodes:main',
         'submitslurm =  laupy.scripts.submitslurm:main',
         'kct-list =  laupy.scripts.kctList:main',
+        'pipeline =  laupy.scripts.pipeline:main',
     ]
     },
     # *strongly* suggested for sharing
