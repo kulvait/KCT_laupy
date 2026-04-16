@@ -1,34 +1,22 @@
-
 # laupy
 
-**laupy** is a Python package designed to simplify and automate tomographic reconstruction workflows, with a strong focus on industrial‑scale datasets and high‑throughput processing on GPU‑accelerated HPC systems. It provides command‑line tools for dataset management, job submission, reconstruction orchestration, and diagnostics — all using open‑source technologies such as Python, BASH, OpenCL/C++, and SLURM.
+**laupy** is a lightweight workflow orchestration framework for high-throughput scientific data processing. Written in Python, it enables scalable, automated pipelines with a focus on dependency-aware execution, HPC integration, and minimal user intervention.
 
----
+It is primarily developed for tomographic reconstruction at synchrotron beamlines, supporting industrial-scale datasets and GPU-accelerated environments. laupy provides command-line tools for dataset management, SLURM job submission, pipeline orchestration, and real-time status inspection, using open-source technologies such as Python, BASH, OpenCL/C++, and SLURM.
 
 ## Motivation
 
-The primary motivation behind **laupy** is to streamline and automate tomographic reconstruction pipelines for **industrial clients** at the **PETRA III synchrotron**, especially at **beamlines P05 and P07**, which are operated by **Helmholtz‑Zentrum Hereon**. These beamlines serve a broad set of industrial sectors, including automotive, aerospace, energy storage, additive manufacturing, and advanced materials R&D.
+Modern scientific experiments, such as high-throughput tomography at synchrotron facilities, generate large volumes of data that must be processed through complex, multi-step workflows. These workflows often involve heterogeneous tools, multiple execution environments, and dependencies between processing stages, making them difficult to manage, reproduce, and scale.
 
-Industrial users typically require:
+In practice, reconstruction workflows are:
+- fragmented across scripts and tools, leading to inefficient resource utilization
+- difficult to automate, scale, and reproduce
+- hard to monitor, inspect, and debug
 
-- **Fast and reliable reconstructions**
-- **Minimal manual intervention**
-- **Simple, reproducible workflows**
-- **Automation that does not require deep scientific or computational expertise**
-
-However, real-world tomography experiments often rely on fragmented or proprietary software, making the processing pipeline difficult to maintain, automate, and scale.
-
-**laupy** addresses this by offering a fully open-source, modular pipeline that integrates seamlessly with existing beamline workflows and supports end‑to‑end automation — from raw data ingestion to reconstruction and reporting.
-
-
-## Target Environment
-
-While the package is fully portable and can run on any SLURM‑based HPC system, development and validation are primarily carried out on the:
-
-- **Maxwell Cluster at DESY**
-
-This environment is well suited for GPU‑accelerated tomographic reconstruction and allows extensive testing at production scale. Nevertheless, **laupy is not tied to Maxwell**, and it is intentionally designed to run on other clusters, Linux workstations, cloud environments, or laboratory computing facilities without modification.
-
+**laupy** addresses these challenges by providing:
+- automated, dependency-aware execution, allowing existing scripts and tools to be integrated into structured pipelines
+- seamless integration with SLURM for HPC job scheduling and resource management
+- tools for dataset management and real-time status inspection
 
 ## Installation
 
@@ -132,7 +120,15 @@ Below is an overview of the most frequently used options
 
 ## Acknowledgements
 
+*laupy* is designed for high-throughput scientific workflows and has been applied to tomographic reconstruction pipelines at synchrotron beamlines, including large-scale and industrial datasets.
+
 The development of this package was supported by [Hi ACTS Use Case Initiatives 2026](https://www.hi-acts.de/en/use-case-initiatives) within the project ***Advanced reconstruction pipeline for tomography experiments at PETRA III***.
+
+## Target Environment
+
+laupy is designed to run on HPC systems with a SLURM scheduler and a standard Python installation. These are the core requirements for deployment.
+
+Development, testing, and validation are primarily performed on the Maxwell Cluster at DESY, which provides GPU-accelerated resources well suited for large-scale tomographic reconstruction and production-like workloads.
 
 ## Licensing
 
