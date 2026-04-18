@@ -209,7 +209,7 @@ def main():
     WD_PATH_REL = [ os.path.relpath(abs_path, ROOTDIR) for abs_path in WD_PATH_ABS ]
     for wd, wd_abs, wd_rel in zip(WD, WD_PATH_ABS, WD_PATH_REL):
         if not wd.is_dir() or ( wd.is_symlink() and not wd.resolve().is_dir() ):
-            print(f"Working directory {wd_rel} does not exist or is not a directory.", out=sys.stderr)
+            print(f"Working directory {wd_rel} does not exist or is not a directory.", file=sys.stderr)
             sys.exit(1)
     # Normalize SLURM script directory path
     SBATCH_DIR = Path(ARG.slurm_dir)
@@ -220,7 +220,7 @@ def main():
     SBATCH_DIR_REL = os.path.relpath(SBATCH_DIR_ABS, ROOTDIR)
     SBATCH_DIR_ABS = SBATCH_DIR_ABS.resolve()
     if not SBATCH_DIR.is_dir() or SBATCH_DIR.is_symlink() and not SBATCH_DIR.resolve().is_dir():
-        print(f"SLURM script directory {SBATCH_DIR_REL} does not exist or is not a directory.", out=sys.stderr)
+        print(f"SLURM script directory {SBATCH_DIR_REL} does not exist or is not a directory.", file=sys.stderr)
         sys.exit(1)
 
     subdirs = []
@@ -258,13 +258,16 @@ def main():
                 for entry in DAG:
                     step = entry.get("step", "N/A")
                     job_id = entry.get("job_id", "N/A")
-                    entry_info = slurm.job_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"}
+                    entry_info = slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"}
                     job_state = entry_info["State"]
                     job_name = entry_info.get("JobName", "N/A")
                     slurm_command = entry.get("slurm_command", "")
                     command = entry.get("command", "")
                     dependencies = entry.get("dependencies", [])
                     basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}"
+                    retired = entry.get("retired", False)
+                    if retired == True:
+                        continue  # Skip retired jobs
                     if job_state in ("PENDING"):
                         reason = entry_info.get("Reason", "N/A")
                         if reason in ("N/A", "None", ""):
@@ -278,7 +281,7 @@ def main():
                     elif job_state in ("REQUEUED", "COMPLETING"):
                         output_lines.append(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name}")
                     elif job_state in ("FAILED", "CANCELLED", "TIMEOUT"):
-                        output_lines.append(colored(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name}"), "red")
+                        output_lines.append(colored(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name}", "red"))
                     elif job_state not in ("COMPLETED"):
                         output_lines.append(colored(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name} (unexpected state)", "yellow"))
                 if len(output_lines) > 1:

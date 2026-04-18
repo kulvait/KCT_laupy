@@ -10,6 +10,8 @@ from pathlib import Path
 import shlex
 import json
 import re
+import uuid
+from laupy import slurm
 
 def load_dag(subdir_abs):
     dag_file = os.path.join(subdir_abs, "pipeline", "dag.json")
@@ -29,7 +31,7 @@ def clean_dag(subdir_abs):
 
 import subprocess
 
-def get_active_dependencies(job_ids, raise_on_fail=False):
+def get_active_slurmids(dependency_dag_entries, raise_on_fail=False):
     """
     Given a list of SLURM job IDs, return only the IDs that are active
     (PENDING or RUNNING). Optionally raise an exception if any job has FAILED.
@@ -47,43 +49,46 @@ def get_active_dependencies(job_ids, raise_on_fail=False):
         Job IDs that are still active (PENDING or RUNNING).
     """
     active_ids = []
-    
-    for job_id in job_ids:
-        try:
-            # Query job state using sacct
-            result = subprocess.run(
-                ["sacct", "-j", str(job_id), "--format=JobName,State", "--noheader", "--parsable2"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            status_lines = result.stdout.strip().splitlines()
-            if not status_lines:
-                # Job not found; treat as finished
-                continue
-
-            # Take first line, could be multiple steps but we care about the main job state
-            fields = status_lines[0].split('|')
-            job_name = fields[0]
-            status = fields[1]
-            
-            if status in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
-                active_ids.append(job_id)
-            elif status in ("FAILED", "CANCELLED", "TIMEOUT"):
-                msg = f"Dependency job {job_name}, ID={job_id} has failed with status {status}"
-                if raise_on_fail:
-                    raise RuntimeError(msg)
-                else:
-                    print("WARNING:", msg)
+    for entry in dependency_dag_entries:
+        job_id = entry["job_id"]
+        status = entry.get("slurm_info", {}).get("State", "UNKNOWN")
+        if status in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
+            active_ids.append(job_id)
+        elif status in ("FAILED", "CANCELLED", "TIMEOUT"):
+            msg = f"Dependency job {job_name}, ID={job_id} has failed with status {status}"
+            if raise_on_fail:
+                raise RuntimeError(msg)
             else:
-                if status not in ("COMPLETED"):
-                    print(f"WARNING: Job {job_name}, ID={job_id} has unexpected status {status}. Treating as finished.")
+                print("WARNING:", msg)
+        else:
+            if status not in ("COMPLETED"):
+                print(f"WARNING: Job {job_name}, ID={job_id} has unexpected status {status}. Treating as finished.")
             # Else, COMPLETED or other terminal state -> ignore
-        except Exception as e:
-            print(f"Error checking SLURM job {job_id}: {e}")
-            raise
     return active_ids
 
+def get_slurmids_by_state(dag_entries, states):
+    """
+    Given a list of DAG entries and a list of SLURM states, return the job IDs of entries that are in those states.
+    
+    Parameters
+    ----------
+    dag_entries : list of dict
+	List of DAG entries, each containing at least "job_id" and "slurm_info" with "State".
+    states : list of str
+	List of SLURM states to filter by (e.g., ["PENDING", "RUNNING"]).
+    
+    Returns
+    -------
+    slurm_ids : list of int
+	Job IDs of entries whose SLURM state is in the specified states.
+    """
+    slurm_ids = []
+    for entry in dag_entries:
+        job_id = entry["job_id"]
+        status = entry.get("slurm_info", {}).get("State", "UNKNOWN")
+        if status in states:
+            slurm_ids.append(job_id)
+    return slurm_ids
 
 
 def appendCommand(cmd_list, pipeline_file):
@@ -180,6 +185,11 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Simulate the submission without actually submitting jobs or crating files")
     parser.add_argument("--verbose", action="store_true", help="Print detailed information about the submission process")
     parser.add_argument("--pipeline-step", type=int, default=-1, help="Pipeline step number to create DAGs for")
+    parser.add_argument("--skip-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["PENDING", "RUNNING", "REQUEUED", "COMPLETING", "COMPLETED"], help="SLURM job states to yield to command submitted in the same step with coresponging state. Default is PENDING, RUNNING, REQUEUED, COMPLETING, COMPLETED.")
+    parser.add_argument("--retire-range", type=str, choices=["none", "cmd", "step"], default="cmd", help="Scope of retiring DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
+    parser.add_argument("--retire-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["FAILED", "CANCELLED", "TIMEOUT"], help="SLURM job states that trigger retiring of DAG entries in the same step on new submission with --retire-range set to 'cmd' or 'step'. Default is FAILED, CANCELLED, TIMEOUT.")
+    parser.add_argument("--cancel-range", type=str, choices=["none", "cmd", "step"], default="none", help="Scope of cancelling active jobs on new submission: 'none' (cancel nothing), 'cmd' (cancel only jobs with the same command and step), 'step' (cancel all jobs with the same step regardless of command). Default is 'none'.")
+    parser.add_argument("--cancel-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["NONE"], help="SLURM job states that trigger cancellation of active jobs in the same step on new submission with --cancel-range set to 'cmd' or 'step'. Default is NONE (no cancellations).")
     # ---- Pipeline management: mutually exclusive subgroup ----
     pipeline_group = parser.add_mutually_exclusive_group()
     pipeline_group.add_argument("--create-pipeline-only", action="store_true", help="Create only the pipeline scripts/DAG and exit (scriptName not required).")
@@ -335,12 +345,50 @@ def main():
             if not ARG.create_pipeline_only and not ARG.delete_pipeline_only and not ARG.clean_dag:
                 DAG = load_dag(SUBDIR_ABS)
                 if ARG.pipeline_step > -1:
-                    dependency_ids = [ entry["job_id"] for entry in DAG if entry["step"] != -1 and entry["step"] < ARG.pipeline_step and "job_id" in entry ]
+                    #Get entries of potential dependencies and same step entries and same step and command entries to evaluate skip conditions and retirement
+                    dependency_dag_entries = [ entry for entry in DAG if entry["step"] != -1 and entry["step"] < ARG.pipeline_step and "job_id" in entry and not entry.get("retired", False) ]
+                    step_dag_entries = [ entry for entry in DAG if entry["step"] == ARG.pipeline_step and "job_id" in entry and not entry.get("retired", False) ]
+                    cmd_dag_entries = [ entry for entry in step_dag_entries if entry["command"] == " ".join(EXEC_CMD_ABS) ]
+                    #Get IDs to query SLURM for active dependencies and same step entries to evaluate skip conditions and retirement
+                    slurm_ids = [ entry["job_id"] for entry in dependency_dag_entries ] + [ entry["job_id"] for entry in step_dag_entries ]
+                    slurm_infos = slurm.slurm_info(slurm_ids)
+                    for i in range(len(slurm_ids)):
+                        jid = slurm_ids[i]
+                        info = slurm_infos[i]
+                        if info["State"] == "UNKNOWN":
+                            continue
+                        for entry in DAG:
+                            if "job_id" in entry and entry["job_id"] == jid:
+                                entry["slurm_info"] = info
+                    #Evaluate skip conditions
+                    if len(cmd_dag_entries) > 0:
+                        skip_entries = get_slurmids_by_state(cmd_dag_entries, ARG.skip_state)
+                        if len(skip_entries) > 0:
+                            print(f"Skipping submission for {SUBDIR_REL} because there are {len(skip_entries)} active entries with the same command in the same step and state in {ARG.skip_state}: {skip_entries}")
+                            continue
                     try: 
-                        if len(dependency_ids) > 0:
-                            active_dependencies = get_active_dependencies(dependency_ids, raise_on_fail=True)
+                        DAG_ID = uuid.uuid4().hex
+                        if len(dependency_dag_entries) > 0:
+                            active_dependencies = get_active_slurmids(dependency_dag_entries, raise_on_fail=True)
                             if len(active_dependencies) > 0:
                                 SLURM_CMD.insert(1, f"--dependency=afterok:{':'.join(str(jid) for jid in active_dependencies)}")
+                        #Cancel active jobs based on --cancel-range and --cancel-state
+                        if ARG.cancel_range != "none":
+                            cancel_candidates = []
+                            if ARG.cancel_range == "cmd":
+                                cancel_candidates = cmd_dag_entries
+                            elif ARG.cancel_range == "step":
+                                cancel_candidates = step_dag_entries
+                            cancel_slurmids = get_slurmids_by_state(cancel_candidates, ARG.cancel_state)
+                            for jid in cancel_slurmids:
+                                entry = next((entry for entry in cancel_candidates if entry["job_id"] == jid), None)
+                                if entry is not None and not entry.get("retired", False):
+                                    entry["retired"] = True # Mark the entry as retired in the DAG
+                                    entry["retire_timestamp"] = time.time()
+                                    entry["redired_by"] = DAG_ID
+                                    entry["retired_reason"] = f"Cancelled due to new submission with --cancel-range {ARG.cancel_range} and --cancel-state {ARG.cancel_state}"
+                                print(f"Cancelling active job with ID {jid} due to new submission with --cancel-range {ARG.cancel_range} and --cancel-state {ARG.cancel_state}")
+                                run(["scancel", str(jid)])
                         #Shall be parsing string of the type "Submitted batch job 123456"
                         result = run(SLURM_CMD, check=True, cwd=ROOTDIR, stdout=subprocess.PIPE, text=True)
                         output = result.stdout.strip()
@@ -353,8 +401,23 @@ def main():
                             # If regex doesn't match, print message and continue
                             print(f"Could not parse SLURM submission output: {output} for {SUBDIR_REL}")
                             continue
-                        DAG_ENTRY = { "step": ARG.pipeline_step, "job_id": int(SLURMID.split()[-1]) , "timestamp": time.time() , "slurm_command": " ".join(SLURM_CMD_ABS), "command": " ".join(EXEC_CMD_ABS), "dependencies": active_dependencies if len(dependency_ids) > 0 else [] }
+                        DAG_ENTRY = { "step": ARG.pipeline_step, "job_id": int(SLURMID.split()[-1]) , "timestamp": time.time() , "slurm_command": " ".join(SLURM_CMD_ABS), "command": " ".join(EXEC_CMD_ABS), "dependencies": active_dependencies if len(active_dependencies) > 0 else [], "retired": False , "dag_id": DAG_ID }
                         DAG.append(DAG_ENTRY)
+                        #Retire DAG entries based on --retire-range and --retire-state
+                        if ARG.retire_range != "none":
+                            retire_candidates = []
+                            if ARG.retire_range == "cmd":
+                                retire_candidates = cmd_dag_entries
+                            elif ARG.retire_range == "step":
+                                retire_candidates = step_dag_entries
+                            retire_slurmids = get_slurmids_by_state(retire_candidates, ARG.retire_state)
+                            for entry in retire_candidates:
+                                if entry["job_id"] in retire_slurmids and not entry.get("retired", False):
+                                    entry["retired"] = True
+                                    entry["retire_timestamp"] = time.time()
+                                    entry["redired_by"] = DAG_ID
+                                    entry["retired_reason"] = f"Retired due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}"
+                                    print(f"Retiring DAG entry with job ID {entry['job_id']} due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}")
                         save_dag(SUBDIR_ABS, DAG)
                         appendCommand(EXEC_CMD_ABS, os.path.join(SUBDIR_ABS, "pipeline", "exec.sh"))
                     except RuntimeError as e:
