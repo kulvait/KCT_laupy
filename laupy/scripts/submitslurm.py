@@ -12,22 +12,8 @@ import json
 import re
 import uuid
 from laupy import slurm
+from laupy.flow import load_dag, save_dag, clean_dag
 
-def load_dag(subdir_abs):
-    dag_file = os.path.join(subdir_abs, "pipeline", "dag.json")
-    if os.path.exists(dag_file):
-        with open(dag_file) as f:
-            return json.load(f)
-    return []
-
-def save_dag(subdir_abs, dag):
-    dag_file = os.path.join(subdir_abs, "pipeline", "dag.json")
-    os.makedirs(os.path.dirname(dag_file), exist_ok=True)
-    with open(dag_file, "w") as f:
-        json.dump(dag, f, indent=2)
-
-def clean_dag(subdir_abs):
-    save_dag(subdir_abs, [])  # Just overwrite with an empty list to clear the DAG
 
 import subprocess
 
@@ -185,7 +171,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Simulate the submission without actually submitting jobs or crating files")
     parser.add_argument("--verbose", action="store_true", help="Print detailed information about the submission process")
     parser.add_argument("--pipeline-step", type=int, default=-1, help="Pipeline step number to create DAGs for")
-    parser.add_argument("--skip-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["PENDING", "RUNNING", "REQUEUED", "COMPLETING", "COMPLETED"], help="SLURM job states to yield to command submitted in the same step with coresponging state. Default is PENDING, RUNNING, REQUEUED, COMPLETING, COMPLETED.")
+    parser.add_argument("--skip-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["PENDING", "RUNNING", "REQUEUED"], help="SLURM job states to yield to command submitted in the same step with coresponging state. Default is PENDING, RUNNING, REQUEUED.")
     parser.add_argument("--retire-range", type=str, choices=["none", "cmd", "step"], default="cmd", help="Scope of retiring DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
     parser.add_argument("--retire-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["FAILED", "CANCELLED", "TIMEOUT"], help="SLURM job states that trigger retiring of DAG entries in the same step on new submission with --retire-range set to 'cmd' or 'step'. Default is FAILED, CANCELLED, TIMEOUT.")
     parser.add_argument("--cancel-range", type=str, choices=["none", "cmd", "step"], default="none", help="Scope of cancelling active jobs on new submission: 'none' (cancel nothing), 'cmd' (cancel only jobs with the same command and step), 'step' (cancel all jobs with the same step regardless of command). Default is 'none'.")
@@ -368,6 +354,7 @@ def main():
                             continue
                     try: 
                         DAG_ID = uuid.uuid4().hex
+                        active_dependencies = []
                         if len(dependency_dag_entries) > 0:
                             active_dependencies = get_active_slurmids(dependency_dag_entries, raise_on_fail=True)
                             if len(active_dependencies) > 0:

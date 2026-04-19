@@ -46,6 +46,12 @@ def slurm_info(slurm_ids: Union[str, int, List[str], List[int]]) -> Union[dict, 
     else:
         return info
 
+def replace_placeholders(string: str, slurm_id: str, node_list: str) -> str:
+    if string is None:
+        return None
+    string = string.replace("%j", slurm_id)
+    string = string.replace("%N", node_list)
+    return string
 
 def get_field(fields, idx, name, slurm_id):
     try:
@@ -77,6 +83,8 @@ def parse_sacct_output(status_lines: list[str], slurm_id: str) -> dict:
     info['NNodes'] = get_field(fields, 8, 'NNodes', slurm_id)
     info['NodeList'] = get_field(fields, 9, 'NodeList', slurm_id)
     info['Reason'] = get_field(fields, 10, 'Reason', slurm_id)
+    info['StdOut'] = replace_placeholders(get_field(fields, 11, 'StdOut', slurm_id), slurm_id, info['NodeList'])
+    info['StdErr'] = replace_placeholders(get_field(fields, 12, 'StdErr', slurm_id), slurm_id, info['NodeList'])
     return info
 
 
@@ -97,7 +105,8 @@ def slurm_sacct_info(slurm_ids: Union[str, int, List[str], List[int]]) -> Union[
     all_info = []
     jobs_to_query = ",".join(slurm_ids)
     CMD = ['sacct', '-j', jobs_to_query,
-           '--format=JobID,JobName,State,ExitCode,Partition,User,Elapsed,Timelimit,NNodes,NodeList,Reason', '--noheader', '--parsable2']
+           '--format=JobID,JobName,State,ExitCode,Partition,User,Elapsed,Timelimit,NNodes,NodeList,Reason,StdOut,StdErr',
+           '--noheader', '--parsable2']
     try:
         result = subprocess.run(
             CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

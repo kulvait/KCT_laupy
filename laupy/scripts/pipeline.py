@@ -12,22 +12,8 @@ from termcolor import colored
 import shlex
 import json
 import re
-
-def load_dag(subdir_abs):
-    dag_file = os.path.join(subdir_abs, "pipeline", "dag.json")
-    if os.path.exists(dag_file):
-        with open(dag_file) as f:
-            return json.load(f)
-    return []
-
-def save_dag(subdir_abs, dag):
-    dag_file = os.path.join(subdir_abs, "pipeline", "dag.json")
-    os.makedirs(os.path.dirname(dag_file), exist_ok=True)
-    with open(dag_file, "w") as f:
-        json.dump(dag, f, indent=2)
-
-def clean_dag(subdir_abs):
-    save_dag(subdir_abs, [])  # Just overwrite with an empty list to clear the DAG
+from laupy.flow import load_dag, save_dag, clean_dag
+from laupy.flow import update_dag_entries
 
 import subprocess
 
@@ -184,9 +170,17 @@ def main():
     # ---- Pipeline management: mutually exclusive subgroup ----
     pipeline_group = parser.add_mutually_exclusive_group()
     pipeline_group.add_argument("--status", action="store_true", help="Show status of existing pipeline/DAG and exit.")
+    pipeline_group.add_argument("--retire", action="store_true", help="Retire failed.")
     pipeline_group.add_argument("--create", action="store_true", help="Create pipeline scripts/DAG and exit.")
     pipeline_group.add_argument("--delete", action="store_true", help="Delete existing pipeline/DAG artifacts and exit.")
     pipeline_group.add_argument("--clean-dag", action="store_true", help="Clean DAG entries for the specified pipeline.")
+    # Add subcommand for logs
+    subparsers = parser.add_subparsers(dest="subcommand", help="Actions")
+    log_parser = subparsers.add_parser("log", help="Show SLURM logs for the specified pipeline step")
+    log_parser.add_argument("id", type=str, help="DAG ID or Job ID to show logs for")
+    # Add sub-options under 'log' for --stdout and --stderr
+    log_parser.add_argument("--stdout", action="store_true", help="Show the standard output logs for the specified pipeline step.")
+    log_parser.add_argument("--stderr", action="store_true", help="Show the error output logs for the specified pipeline step.")
 
     # Parse the arguments
     ARG = parser.parse_args()
@@ -286,6 +280,64 @@ def main():
                         output_lines.append(colored(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name} (unexpected state)", "yellow"))
                 if len(output_lines) > 1:
                     print("\n".join(output_lines))
+        if ARG.retire:
+            DAG = load_dag(SUBDIR_ABS)
+            if len(DAG) == 0:
+                print(f"No pipeline/DAG found for {SUBDIR_REL}.")
+            else:
+                output_lines = [f"{SUBDIR_REL} pipeline status:"]
+                for entry in DAG:
+                    step = entry.get("step", "N/A")
+                    job_id = entry.get("job_id", "N/A")
+                    entry_info = slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"}
+                    job_state = entry_info["State"]
+                    job_name = entry_info.get("JobName", "N/A")
+                    slurm_command = entry.get("slurm_command", "")
+                    command = entry.get("command", "")
+                    dependencies = entry.get("dependencies", [])
+                    basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}"
+                    retired = entry.get("retired", False)
+                    if retired == True:
+                        continue  # Skip retired jobs
+                    if job_state in ("FAILED", "CANCELLED", "TIMEOUT"):
+                        entry["retired"] = True
+                        output_lines.append(colored(f"{basic_info} -> Marked as retired", "red"))
+                if len(output_lines) > 1:
+                    print("\n".join(output_lines))
+            save_dag(SUBDIR_ABS, DAG)  # Save the updated DAG with retired flags
+        if ARG.subcommand == "log":
+            DAG = load_dag(SUBDIR_ABS)
+            update_dag_entries(DAG, update_retired=True, update_negative_step=True, filter_terminal_states=False)
+            DAG_flt = [ entry for entry in DAG if str(entry.get("job_id", "")) == ARG.id or str(entry.get("step", "")) == ARG.id ]
+            if not ARG.stdout and not ARG.stderr:
+                ARG.stdout = True
+                ARG.stderr = True
+            for entry in DAG_flt:
+                step = entry.get("step", "N/A")
+                job_id = entry.get("job_id", "N/A")
+                slurm_info = entry.get("slurm_info", {})
+                job_name = slurm_info.get("JobName", "N/A")
+                job_state = slurm_info.get("State", "N/A")
+                std_out_file = slurm_info.get("StdOut", "")
+                std_err_file = slurm_info.get("StdErr", "")
+                basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}, StdOut: {std_out_file}, StdErr: {std_err_file}"
+                print(colored(f"{basic_info}", "yellow"))
+                if ARG.stderr:
+                    if std_err_file and os.path.exists(std_err_file):
+                        print(colored(f"--- START SLURM STDERR", "red"))
+                        with open(std_err_file) as f:
+                            print(f.read())
+                        print(colored(f"--- END SLURM STDERR", "red"))
+                    else:
+                        print(f"No STDERR file found for Step {entry.get('step', 'N/A')}, Job ID {entry.get('job_id', 'N/A')}")
+                if ARG.stdout:
+                    if std_out_file and os.path.exists(std_out_file):
+                        print(colored(f"--- START SLURM STDOUT", "green"))
+                        with open(std_out_file) as f:
+                            print(f.read())
+                        print(colored(f"--- END SLURM STDOUT", "green"))
+                    else:
+                        print(f"No STDOUT file found for Step {entry.get('step', 'N/A')}, Job ID {entry.get('job_id', 'N/A')}")
         if ARG.create:
             os.makedirs(PIPELINE_LOG_DIR, exist_ok=True)
         if ARG.clean_dag:
