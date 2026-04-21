@@ -299,9 +299,13 @@ def main():
         if not pipeline_mode:
             SCRIPTNAME_NOEXT = os.path.splitext(SCRIPTNAME)[0]
             JOBNAME = f"{SCRIPTNAME_NOEXT}_{subdir}"
+            EXPORTS= { "PIPELINE_SCRIPTNAME": SCRIPTNAME, "PIPELINE_JOBNAME": JOBNAME, "LD_PRELOAD": "" }
+            EXPORT_STR = ",".join(f"{key}={value}" for key, value in EXPORTS.items())
             if ARG.delaytime > 0:
                 time.sleep(ARG.delaytime)
-            SLURM_CMD = ["sbatch"] + SLURM_ARGS_LIST + [f"--job-name={JOBNAME}"]
+            SLURM_CMD = ["sbatch"] + SLURM_ARGS_LIST 
+            SLURM_CMD += [f"--job-name={JOBNAME}"]
+            SLURM_CMD += [f"--export=ALL,{EXPORT_STR}"]
             SLURM_CMD += ["--output=" + os.path.join(SUBDIR_REL, "pipeline", "log", f"{SCRIPTNAME_NOEXT}-%N-%j.out")]
             SLURM_CMD += ["--error=" + os.path.join(SUBDIR_REL, "pipeline", "log", f"{SCRIPTNAME_NOEXT}-%N-%j.err")]
             EXEC_CMD_REL = [SCRIPT_REL, SUBDIR_REL]

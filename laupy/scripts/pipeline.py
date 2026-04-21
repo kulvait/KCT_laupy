@@ -169,18 +169,20 @@ def main():
     parser.add_argument("--pipeline-step", type=int, default=-1, help="Pipeline step number to create DAGs for")
     # ---- Pipeline management: mutually exclusive subgroup ----
     pipeline_group = parser.add_mutually_exclusive_group()
-    pipeline_group.add_argument("--status", action="store_true", help="Show status of existing pipeline/DAG and exit.")
     pipeline_group.add_argument("--retire", action="store_true", help="Retire failed.")
     pipeline_group.add_argument("--create", action="store_true", help="Create pipeline scripts/DAG and exit.")
     pipeline_group.add_argument("--delete", action="store_true", help="Delete existing pipeline/DAG artifacts and exit.")
     pipeline_group.add_argument("--clean-dag", action="store_true", help="Clean DAG entries for the specified pipeline.")
-    # Add subcommand for logs
     subparsers = parser.add_subparsers(dest="subcommand", help="Actions")
+    # log action for showing SLURM logs for a specific pipeline step or job ID
     log_parser = subparsers.add_parser("log", help="Show SLURM logs for the specified pipeline step")
     log_parser.add_argument("id", type=str, help="DAG ID or Job ID to show logs for")
-    # Add sub-options under 'log' for --stdout and --stderr
     log_parser.add_argument("--stdout", action="store_true", help="Show the standard output logs for the specified pipeline step.")
     log_parser.add_argument("--stderr", action="store_true", help="Show the error output logs for the specified pipeline step.")
+    # status action for showing status of all pipeline steps with color coding
+    status_parser = subparsers.add_parser("status", help="Show status of all pipeline steps with color coding")
+    status_parser.add_argument("--show-completed", action="store_true", help="Include completed steps in the status output")
+    status_parser.add_argument("--show-retired", action="store_true", help="Include retired steps in the status output")
 
     # Parse the arguments
     ARG = parser.parse_args()
@@ -243,8 +245,9 @@ def main():
         SUBDIR_REL = subdir_dct["subdir_rel"]
         PIPELINE_DIR = os.path.join(SUBDIR_ABS, "pipeline")
         PIPELINE_LOG_DIR = os.path.join(PIPELINE_DIR, "log")
-        if ARG.status:
+        if ARG.subcommand == "status":
             DAG = load_dag(SUBDIR_ABS)
+            update_dag_entries(DAG, update_retired=ARG.show_retired, update_negative_step=False, filter_terminal_states=True)
             if len(DAG) == 0:
                 print(f"No pipeline/DAG found for {SUBDIR_REL}.")
             else:
@@ -252,7 +255,7 @@ def main():
                 for entry in DAG:
                     step = entry.get("step", "N/A")
                     job_id = entry.get("job_id", "N/A")
-                    entry_info = slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"}
+                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"} )
                     job_state = entry_info["State"]
                     job_name = entry_info.get("JobName", "N/A")
                     slurm_command = entry.get("slurm_command", "")
@@ -260,7 +263,7 @@ def main():
                     dependencies = entry.get("dependencies", [])
                     basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}"
                     retired = entry.get("retired", False)
-                    if retired == True:
+                    if retired == True and not ARG.show_retired:
                         continue  # Skip retired jobs
                     if job_state in ("PENDING"):
                         reason = entry_info.get("Reason", "N/A")
@@ -271,11 +274,16 @@ def main():
                     elif job_state in ("RUNNING"):
                          elapsed = entry_info.get("Elapsed", "N/A")
                          time_limit = entry_info.get("Timelimit", "N/A")
-                         output_lines.append(colored(f"{basic_info}, Time limit: {time_limit}, Elapsed: {elapsed}", "green"))
+                         node_list = entry_info.get("NodeList", "N/A")
+                         output_lines.append(colored(f"{basic_info}, Time limit: {time_limit}, Elapsed: {elapsed}, {node_list}", "green"))
                     elif job_state in ("REQUEUED", "COMPLETING"):
                         output_lines.append(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name}")
                     elif job_state in ("FAILED", "CANCELLED", "TIMEOUT"):
                         output_lines.append(colored(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name}", "red"))
+                    elif job_state in ("COMPLETED"):
+                        if ARG.show_completed:
+                            elapsed = entry_info.get("Elapsed", "N/A")
+                            output_lines.append(colored(f"{basic_info}, Elapsed: {elapsed}", "magenta"))
                     elif job_state not in ("COMPLETED"):
                         output_lines.append(colored(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name} (unexpected state)", "yellow"))
                 if len(output_lines) > 1:
