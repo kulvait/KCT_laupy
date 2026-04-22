@@ -330,14 +330,6 @@ def main():
                 std_err_file = slurm_info.get("StdErr", "")
                 basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}, StdOut: {std_out_file}, StdErr: {std_err_file}"
                 print(colored(f"{basic_info}", "yellow"))
-                if ARG.stderr:
-                    if std_err_file and os.path.exists(std_err_file):
-                        print(colored(f"--- START SLURM STDERR", "red"))
-                        with open(std_err_file) as f:
-                            print(f.read())
-                        print(colored(f"--- END SLURM STDERR", "red"))
-                    else:
-                        print(f"No STDERR file found for Step {entry.get('step', 'N/A')}, Job ID {entry.get('job_id', 'N/A')}")
                 if ARG.stdout:
                     if std_out_file and os.path.exists(std_out_file):
                         print(colored(f"--- START SLURM STDOUT", "green"))
@@ -346,6 +338,14 @@ def main():
                         print(colored(f"--- END SLURM STDOUT", "green"))
                     else:
                         print(f"No STDOUT file found for Step {entry.get('step', 'N/A')}, Job ID {entry.get('job_id', 'N/A')}")
+                if ARG.stderr:
+                    if std_err_file and os.path.exists(std_err_file):
+                        print(colored(f"--- START SLURM STDERR", "red"))
+                        with open(std_err_file) as f:
+                            print(f.read())
+                        print(colored(f"--- END SLURM STDERR", "red"))
+                    else:
+                        print(f"No STDERR file found for Step {entry.get('step', 'N/A')}, Job ID {entry.get('job_id', 'N/A')}")
         if ARG.create:
             os.makedirs(PIPELINE_LOG_DIR, exist_ok=True)
         if ARG.clean_dag:
