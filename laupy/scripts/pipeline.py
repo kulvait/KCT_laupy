@@ -169,7 +169,6 @@ def main():
     parser.add_argument("--pipeline-step", type=int, default=-1, help="Pipeline step number to create DAGs for")
     # ---- Pipeline management: mutually exclusive subgroup ----
     pipeline_group = parser.add_mutually_exclusive_group()
-    pipeline_group.add_argument("--retire", action="store_true", help="Retire failed.")
     pipeline_group.add_argument("--create", action="store_true", help="Create pipeline scripts/DAG and exit.")
     pipeline_group.add_argument("--delete", action="store_true", help="Delete existing pipeline/DAG artifacts and exit.")
     pipeline_group.add_argument("--clean-dag", action="store_true", help="Clean DAG entries for the specified pipeline.")
@@ -183,9 +182,21 @@ def main():
     status_parser = subparsers.add_parser("status", help="Show status of all pipeline steps with color coding")
     status_parser.add_argument("--show-completed", action="store_true", help="Include completed steps in the status output")
     status_parser.add_argument("--show-retired", action="store_true", help="Include retired steps in the status output")
-
+    # retire action for marking jobs retired
+    retire_parser = subparsers.add_parser("retire", help="Mark failed jobs as retired in the DAG")
+    retire_range = retire_parser.add_mutually_exclusive_group()
+    retire_parser.add_argument("--state", nargs="+",
+    choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"],
+    default=["FAILED", "CANCELLED", "TIMEOUT"],
+    help="SLURM job states that trigger retirement (default: FAILED, CANCELLED, TIMEOUT)")
+    retire_range.add_argument("--all", action="store_true", help="Mark all non-retired jobs as retired, filtered by --state")
+    retire_range.add_argument("--job", nargs="+", type=str, help="Mark specific job IDs as retired (e.g. --job 123 456 789)")
+    retire_range.add_argument("--step", nargs="+", type=int, help="Mark specific pipeline steps as retired (e.g. --step 1 2 3)")
     # Parse the arguments
     ARG = parser.parse_args()
+    if ARG.subcommand == "retire":
+        if not (ARG.all or ARG.job or ARG.step):
+            ARG.all = True  # Default to retiring all if no specific range is provided
     if ARG.verbose:
         print("Parsed arguments:")
         for arg_name, arg_value in vars(ARG).items():
@@ -288,25 +299,28 @@ def main():
                         output_lines.append(colored(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name} (unexpected state)", "yellow"))
                 if len(output_lines) > 1:
                     print("\n".join(output_lines))
-        if ARG.retire:
+        if ARG.subcommand == "retire":
             DAG = load_dag(SUBDIR_ABS)
+            update_dag_entries(DAG, update_retired=True, update_negative_step=True, filter_terminal_states=False)
+            retire_states = set(ARG.state)
+            DAG_flt = [ entry for entry in DAG if entry.get("retired", False) == False ]
+            DAG_flt = [ entry for entry in DAG_flt if ( "slurm_info" in entry and entry["slurm_info"].get("State", "N/A") in retire_states ) ]
+            if ARG.job:
+                DAG_flt = [ entry for entry in DAG_flt if str(entry.get("job_id", "")) in ARG.job ]
+            elif ARG.step:
+                DAG_flt = [ entry for entry in DAG_flt if str(entry.get("step", "")) in ARG.step ]
             if len(DAG) == 0:
                 print(f"No pipeline/DAG found for {SUBDIR_REL}.")
             else:
-                output_lines = [f"{SUBDIR_REL} pipeline status:"]
-                for entry in DAG:
+                output_lines = [f"{SUBDIR_REL} pipeline retire:"]
+                for entry in DAG_flt:
                     step = entry.get("step", "N/A")
                     job_id = entry.get("job_id", "N/A")
-                    entry_info = slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"}
+                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"} )
                     job_state = entry_info["State"]
                     job_name = entry_info.get("JobName", "N/A")
-                    slurm_command = entry.get("slurm_command", "")
-                    command = entry.get("command", "")
-                    dependencies = entry.get("dependencies", [])
-                    basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}"
                     retired = entry.get("retired", False)
-                    if retired == True:
-                        continue  # Skip retired jobs
+                    basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}"
                     if job_state in ("FAILED", "CANCELLED", "TIMEOUT"):
                         entry["retired"] = True
                         output_lines.append(colored(f"{basic_info} -> Marked as retired", "red"))
