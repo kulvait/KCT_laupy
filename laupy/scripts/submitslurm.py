@@ -37,6 +37,7 @@ def get_active_slurmids(dependency_dag_entries, raise_on_fail=False):
     active_ids = []
     for entry in dependency_dag_entries:
         job_id = entry["job_id"]
+        job_name = entry.get("job_name", "UNKNOWN")
         status = entry.get("slurm_info", {}).get("State", "UNKNOWN")
         if status in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
             active_ids.append(job_id)
