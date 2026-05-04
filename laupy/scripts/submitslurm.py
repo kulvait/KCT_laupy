@@ -210,7 +210,7 @@ def main():
     WD_PATH_REL = [ os.path.relpath(abs_path, ROOTDIR) for abs_path in WD_PATH_ABS ]
     for wd, wd_abs, wd_rel in zip(WD, WD_PATH_ABS, WD_PATH_REL):
         if not wd.is_dir() or ( wd.is_symlink() and not wd.resolve().is_dir() ):
-            print(f"Working directory {wd_rel} does not exist or is not a directory.", out=sys.stderr)
+            print(f"Working directory {wd_rel} does not exist or is not a directory.", file=sys.stderr)
             sys.exit(1)
     # Normalize SLURM script directory path
     SBATCH_DIR = Path(ARG.slurm_dir)
@@ -221,7 +221,7 @@ def main():
     SBATCH_DIR_REL = os.path.relpath(SBATCH_DIR_ABS, ROOTDIR)
     SBATCH_DIR_ABS = SBATCH_DIR_ABS.resolve()
     if not SBATCH_DIR.is_dir() or SBATCH_DIR.is_symlink() and not SBATCH_DIR.resolve().is_dir():
-        print(f"SLURM script directory {SBATCH_DIR_REL} does not exist or is not a directory.", out=sys.stderr)
+        print(f"SLURM script directory {SBATCH_DIR_REL} does not exist or is not a directory.", file=sys.stderr)
         sys.exit(1)
 
     #If --partition is not set by the user and --gpu-nodes is requested, set partition to "allgpu"
