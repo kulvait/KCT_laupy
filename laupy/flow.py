@@ -38,13 +38,14 @@ def update_dag_entries(DAG: list, pipeline_step: int = -1, update_retired: bool 
         DAG_flt = [ entry for entry in DAG_flt if not ( "slurm_info" in entry and entry["slurm_info"]["State"] in ["COMPLETED", "FAILED", "CANCELLED"] ) ]
     #Get entries of potential dependencies and same step entries and same step and command entries to evaluate skip conditions and retirement
     slurm_ids = [ entry["job_id"] for entry in DAG_flt if "job_id" in entry ]
-    slurm_infos = slurm.slurm_info(slurm_ids)
-    for i in range(len(slurm_ids)):
-        jid = slurm_ids[i]
-        info = slurm_infos[i]
-        if info["State"] == "UNKNOWN":
-            continue
-        DAG_flt[i]["slurm_info"] = info
+    if len(slurm_ids) > 0:
+        slurm_infos = slurm.slurm_info(slurm_ids)
+        for i in range(len(slurm_ids)):
+            jid = slurm_ids[i]
+            info = slurm_infos[i]
+            if info["State"] == "UNKNOWN":
+                continue
+            DAG_flt[i]["slurm_info"] = info
 
 def load_dag(execution_unit_dir: str) -> list:
     """Load the DAG (Directed Acyclic Graph) for the execution context."""

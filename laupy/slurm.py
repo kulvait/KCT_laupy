@@ -103,6 +103,12 @@ def slurm_sacct_info(slurm_ids: Union[str, int, List[str], List[int]]) -> Union[
     else:
         slurm_ids = [str(sid) for sid in slurm_ids]
     all_info = []
+    if len(slurm_ids) == 0:
+        log.warning("No job IDs provided to slurm_sacct_info.")
+        if non_list_input:
+            return {}
+        else:
+            return []
     jobs_to_query = ",".join(slurm_ids)
     CMD = ['sacct', '-j', jobs_to_query,
            '--format=JobID,JobName,State,ExitCode,Partition,User,Elapsed,Timelimit,NNodes,NodeList,Reason,StdOut,StdErr',
