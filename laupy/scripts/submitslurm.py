@@ -154,7 +154,7 @@ def parse_comma_separated(value):
     return [item.strip() for item in value.split(",") if item.strip()]
 
 def main():
-    parser = argparse.ArgumentParser(description="Submit jobs to SLURM.")
+    parser = argparse.ArgumentParser(description="Submit jobs to SLURM using laupy")
     
     # Define command-line arguments
     parser.add_argument("-d", "--root-dir", type=str, help="Root directory (defaults to current directory)", default=None)
@@ -402,12 +402,14 @@ def main():
                         DAG_ENTRY = {}
                         DAG_ENTRY["step"] = ARG.pipeline_step
                         DAG_ENTRY["script_name"] = SCRIPTNAME
+                        DAG_ENTRY["execution_unit_name"] = subdir
                         DAG_ENTRY["timestamp"] = time.time()
                         DAG_ENTRY["slurm_command"] = " ".join(SLURM_CMD_ABS)
                         DAG_ENTRY["command"] = " ".join(EXEC_CMD_ABS)
                         DAG_ENTRY["dependencies"] = active_dependencies if len(active_dependencies) > 0 else []
                         DAG_ENTRY["retired"] = False
                         DAG_ENTRY["dag_id"] = DAG_ID
+                        DAG_ENTRY["execution_unit_dir"] = SUBDIR_ABS
                         #Shall be parsing string of the type "Submitted batch job 123456"
                         result = run(SLURM_CMD, check=True, cwd=ROOTDIR, stdout=subprocess.PIPE, text=True)
                         output = result.stdout.strip()

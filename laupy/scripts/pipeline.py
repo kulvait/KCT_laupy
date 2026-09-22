@@ -148,7 +148,7 @@ def parse_comma_separated(value):
     return [item.strip() for item in value.split(",") if item.strip()]
 
 def main():
-    parser = argparse.ArgumentParser(description="Submit jobs to SLURM.")
+    parser = argparse.ArgumentParser(description="laupy pipeline management tool for SLURM job administration and DAG handling.")
     
     # Define command-line arguments
     parser.add_argument("-d", "--root-dir", type=str, help="Root directory (defaults to current directory)", default=None)
@@ -192,9 +192,19 @@ def main():
     retire_range.add_argument("--all", action="store_true", help="Mark all non-retired jobs as retired, filtered by --state")
     retire_range.add_argument("--job", nargs="+", type=str, help="Mark specific job IDs as retired (e.g. --job 123 456 789)")
     retire_range.add_argument("--step", nargs="+", type=int, help="Mark specific pipeline steps as retired (e.g. --step 1 2 3)")
+    # cancel action for cancelling jobs
+    cancel_parser = subparsers.add_parser("cancel", help="Cancel jobs in the DAG")
+    cancel_range = cancel_parser.add_mutually_exclusive_group()
+    cancel_range.add_argument("--all", action="store_true", help="Cancel all non-retired jobs, filtered by --state")
+    cancel_range.add_argument("--job", nargs="+", type=str, help="Cancel specific job IDs (e.g. --job 123 456 789)")
+    cancel_range.add_argument("--step", nargs="+", type=int, help="Cancel specific pipeline steps (e.g. --step 1 2 3)")
+    cancel_parser.add_argument("--state", nargs="+",
+    choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"],
+    default=["PENDING", "RUNNING", "REQUEUED", "COMPLETING"],
+    help="SLURM job states that trigger cancellation (default: PENDING, RUNNING, REQUEUED, COMPLETING)")
     # Parse the arguments
     ARG = parser.parse_args()
-    if ARG.subcommand == "retire":
+    if ARG.subcommand == "retire" or ARG.subcommand == "cancel":
         if not (ARG.all or ARG.job or ARG.step):
             ARG.all = True  # Default to retiring all if no specific range is provided
     if ARG.verbose:
@@ -327,6 +337,37 @@ def main():
                 if len(output_lines) > 1:
                     print("\n".join(output_lines))
             save_dag(SUBDIR_ABS, DAG)  # Save the updated DAG with retired flags
+        if ARG.subcommand == "cancel":
+            DAG = load_dag(SUBDIR_ABS)
+            update_dag_entries(DAG, update_retired=True, update_negative_step=True, filter_terminal_states=False)
+            cancel_states = set(ARG.state)
+            DAG_flt = [ entry for entry in DAG if entry.get("retired", False) == False ]
+            DAG_flt = [ entry for entry in DAG_flt if ( "slurm_info" in entry and entry["slurm_info"].get("State", "N/A") in cancel_states ) ]
+            if ARG.job:
+                DAG_flt = [ entry for entry in DAG_flt if str(entry.get("job_id", "")) in ARG.job ]
+            elif ARG.step:
+                DAG_flt = [ entry for entry in DAG_flt if str(entry.get("step", "")) in ARG.step ]
+            if len(DAG) == 0:
+                print(f"No pipeline/DAG found for {SUBDIR_REL}.")
+            else:
+                output_lines = [f"{SUBDIR_REL} pipeline cancel:"]
+            for entry in DAG_flt:
+                step = entry.get("step", "N/A")
+                job_id = entry.get("job_id", "N/A")
+                entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"} )
+                job_state = entry_info["State"]
+                job_name = entry_info.get("JobName", "N/A")
+                basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}"
+                if job_state in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
+                    try:
+                        run(["scancel", str(job_id)], check=True)
+                        output_lines.append(colored(f"{basic_info} -> Cancelled successfully", "yellow"))
+                        entry_info["State"] = "CANCELLED"
+                    except Exception as e:
+                        output_lines.append(colored(f"{basic_info} -> Failed to cancel: {e}", "red"))
+                if len(output_lines) > 1:
+                    print("\n".join(output_lines))
+            save_dag(SUBDIR_ABS, DAG)  # Save the updated DAG with cancelled states
         if ARG.subcommand == "log":
             DAG = load_dag(SUBDIR_ABS)
             update_dag_entries(DAG, update_retired=True, update_negative_step=True, filter_terminal_states=False)
