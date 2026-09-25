@@ -13,46 +13,11 @@ import re
 import uuid
 from laupy import slurm
 from laupy.flow import load_dag, save_dag, clean_dag
-from laupy.flow import update_dag_entries
-
+from laupy.flow import update_dag_entries, schedule_slurm_job
+from laupy.slurm import get_active_slurmids, run_slurm_command
 
 import subprocess
 
-def get_active_slurmids(dependency_dag_entries, raise_on_fail=False):
-    """
-    Given a list of SLURM job IDs, return only the IDs that are active
-    (PENDING or RUNNING). Optionally raise an exception if any job has FAILED.
-    
-    Parameters
-    ----------
-    job_ids : list of int
-        List of SLURM job IDs to check.
-    raise_on_fail : bool
-        If True, raises RuntimeError if any job is in FAILED/CANCELLED state.
-    
-    Returns
-    -------
-    active_ids : list of int
-        Job IDs that are still active (PENDING or RUNNING).
-    """
-    active_ids = []
-    for entry in dependency_dag_entries:
-        job_id = entry["job_id"]
-        job_name = entry.get("job_name", "UNKNOWN")
-        status = entry.get("slurm_info", {}).get("State", "UNKNOWN")
-        if status in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
-            active_ids.append(job_id)
-        elif status in ("FAILED", "CANCELLED", "TIMEOUT"):
-            msg = f"Dependency job {job_name}, ID={job_id} has failed with status {status}"
-            if raise_on_fail:
-                raise RuntimeError(msg)
-            else:
-                print("WARNING:", msg)
-        else:
-            if status not in ("COMPLETED"):
-                print(f"WARNING: Job {job_name}, ID={job_id} has unexpected status {status}. Treating as finished.")
-            # Else, COMPLETED or other terminal state -> ignore
-    return active_ids
 
 def get_slurmids_by_state(dag_entries, states):
     """
@@ -343,7 +308,7 @@ def main():
                     step_dag_entries = [ entry for entry in DAG if entry["step"] == ARG.pipeline_step and "job_id" in entry and not entry.get("retired", False) ]
                     cmd_dag_entries = [ entry for entry in step_dag_entries if entry["command"] == " ".join(EXEC_CMD_ABS) ]
                     scriptname_dag_entries = [ entry for entry in step_dag_entries if entry.get("script_name", "") == SCRIPTNAME ]
-                    jobname_dag_entries = [ entry for entry in step_dag_entries if entry.get("slur_info", {}).get("JobName", "") == JOBNAME ]
+                    jobname_dag_entries = [ entry for entry in step_dag_entries if entry.get("slurm_info", {}).get("JobName", "") == JOBNAME ]
                     #Evaluate skip conditions
                     if ARG.skip_range == "cmd":
                         skip_entries = cmd_dag_entries
@@ -393,40 +358,11 @@ def main():
                                     entry["redired_by"] = DAG_ID
                                     entry["retired_reason"] = f"Retired due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}"
                                     print(f"Retiring DAG entry with job ID {entry['job_id']} due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}")
-                        dependency_dag_entries = [ entry for entry in DAG if entry["step"] != -1 and entry["step"] < ARG.pipeline_step and "job_id" in entry and not entry.get("retired", False) ]
-                        active_dependencies = []
-                        if len(dependency_dag_entries) > 0:
-                            active_dependencies = get_active_slurmids(dependency_dag_entries, raise_on_fail=True)
-                            if len(active_dependencies) > 0:
-                                SLURM_CMD.insert(1, f"--dependency=afterok:{':'.join(str(jid) for jid in active_dependencies)}")
-                        DAG_ENTRY = {}
-                        DAG_ENTRY["step"] = ARG.pipeline_step
-                        DAG_ENTRY["script_name"] = SCRIPTNAME
-                        DAG_ENTRY["execution_unit_name"] = subdir
-                        DAG_ENTRY["timestamp"] = time.time()
-                        DAG_ENTRY["slurm_command"] = " ".join(SLURM_CMD_ABS)
-                        DAG_ENTRY["command"] = " ".join(EXEC_CMD_ABS)
-                        DAG_ENTRY["dependencies"] = active_dependencies if len(active_dependencies) > 0 else []
-                        DAG_ENTRY["retired"] = False
-                        DAG_ENTRY["dag_id"] = DAG_ID
-                        DAG_ENTRY["execution_unit_dir"] = SUBDIR_ABS
-                        #Shall be parsing string of the type "Submitted batch job 123456"
-                        result = run(SLURM_CMD, check=True, cwd=ROOTDIR, stdout=subprocess.PIPE, text=True)
-                        output = result.stdout.strip()
-                        # Use regex to capture the job ID (it will match "Submitted batch job 123456")
-                        match = re.search(r"Submitted batch job (\d+)", output)
-                        if match:
-                            # Return the job ID (converted to an integer)
-                            SLURMID = match.group(1)
-                            DAG_ENTRY["job_id"] = int(SLURMID.split()[-1])
-                        else:
-                            # If regex doesn't match, print message and continue
-                            print(f"Could not parse SLURM submission output: {output} for {SUBDIR_REL}")
-                            continue
-                        DAG.append(DAG_ENTRY)
-                        #Retire DAG entries based on --retire-range and --retire-state
-                        save_dag(SUBDIR_ABS, DAG)
-                        appendCommand(EXEC_CMD_ABS, os.path.join(SUBDIR_ABS, "pipeline", "exec.sh"))
+                        DAG_ENTRY = schedule_slurm_job(DAG, ARG.pipeline_step, SCRIPTNAME, JOBNAME, SUBDIR_ABS, SLURM_CMD_ABS, EXEC_CMD_ABS, None)
+                        if DAG_ENTRY is not None:
+                            DAG.append(DAG_ENTRY)
+                            save_dag(SUBDIR_ABS, DAG)
+                            appendCommand(EXEC_CMD_ABS, os.path.join(SUBDIR_ABS, "pipeline", "exec.sh"))
                     except RuntimeError as e:
                         print(f"Not submitting job for {SUBDIR_REL} due to failed dependency: {e}")
                         continue
@@ -436,8 +372,5 @@ def main():
                 else:
                     run(SLURM_CMD)
 
-
-
 if __name__ == "__main__":
     main()
-

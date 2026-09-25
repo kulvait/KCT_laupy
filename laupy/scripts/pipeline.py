@@ -17,14 +17,30 @@ from laupy.flow import update_dag_entries
 
 import subprocess
 
-def get_active_dependencies(job_ids, raise_on_fail=False):
+import logging
+# Create a logger specific to this module
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)  # Set the logging level to INFO
+# Create a console handler and set its level to INFO
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+# Create a formatter and set it for the handler
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s:%(lineno)d - %(levelname)s : %(message)s', datefmt='%d.%m.%Y %H:%M:%S')
+ch.setFormatter(formatter)
+# Add the handler to the logger
+log.addHandler(ch)
+log.propagate = False  # Prevent log messages from being propagated to the root logger
+
+
+def get_active_dependencies(slurm_ids, raise_on_fail=False):
     """
     Given a list of SLURM job IDs, return only the IDs that are active
     (PENDING or RUNNING). Optionally raise an exception if any job has FAILED.
     
     Parameters
     ----------
-    job_ids : list of int
+    slurm_ids : list of int
         List of SLURM job IDs to check.
     raise_on_fail : bool
         If True, raises RuntimeError if any job is in FAILED/CANCELLED state.
@@ -36,11 +52,11 @@ def get_active_dependencies(job_ids, raise_on_fail=False):
     """
     active_ids = []
     
-    for job_id in job_ids:
+    for slurm_id in slurm_ids:
         try:
             # Query job state using sacct
             result = subprocess.run(
-                ["sacct", "-j", str(job_id), "--format=JobName,State", "--noheader", "--parsable2"],
+                ["sacct", "-j", str(slurm_id), "--format=JobName,State", "--noheader", "--parsable2"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -56,19 +72,19 @@ def get_active_dependencies(job_ids, raise_on_fail=False):
             status = fields[1]
             
             if status in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
-                active_ids.append(job_id)
+                active_ids.append(slurm_id)
             elif status in ("FAILED", "CANCELLED", "TIMEOUT"):
-                msg = f"Dependency job {job_name}, ID={job_id} has failed with status {status}"
+                msg = f"Dependency job {job_name}, ID={slurm_id} has failed with status {status}"
                 if raise_on_fail:
                     raise RuntimeError(msg)
                 else:
                     print("WARNING:", msg)
             else:
                 if status not in ("COMPLETED"):
-                    print(f"WARNING: Job {job_name}, ID={job_id} has unexpected status {status}. Treating as finished.")
+                    print(f"WARNING: Job {job_name}, ID={slurm_id} has unexpected status {status}. Treating as finished.")
             # Else, COMPLETED or other terminal state -> ignore
         except Exception as e:
-            print(f"Error checking SLURM job {job_id}: {e}")
+            print(f"Error checking SLURM job {slurm_id}: {e}")
             raise
     return active_ids
 
@@ -275,14 +291,17 @@ def main():
                 output_lines = [f"{SUBDIR_REL} pipeline status:"]
                 for entry in DAG:
                     step = entry.get("step", "N/A")
+                    slurm_id = entry.get("slurm_id", None)
                     job_id = entry.get("job_id", "N/A")
-                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"} )
+                    if slurm_id is None:
+                        slurm_id = job_id  # Fallback to job_id if slurm_id is not present
+                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(slurm_id) if job_id != "N/A" else {"State": "UNKNOWN"} )
                     job_state = entry_info["State"]
                     job_name = entry_info.get("JobName", "N/A")
                     slurm_command = entry.get("slurm_command", "")
                     command = entry.get("command", "")
                     dependencies = entry.get("dependencies", [])
-                    basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}"
+                    basic_info = f"\tStep: {step}, Slurm ID: {slurm_id}, Job Name: {job_name}, State: {job_state}"
                     retired = entry.get("retired", False)
                     if retired == True and not ARG.show_retired:
                         continue  # Skip retired jobs
@@ -298,15 +317,15 @@ def main():
                          node_list = entry_info.get("NodeList", "N/A")
                          output_lines.append(colored(f"{basic_info}, Time limit: {time_limit}, Elapsed: {elapsed}, {node_list}", "green"))
                     elif job_state in ("REQUEUED", "COMPLETING"):
-                        output_lines.append(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name}")
+                        output_lines.append(f"{basic_info}")
                     elif job_state in ("FAILED", "CANCELLED", "TIMEOUT"):
-                        output_lines.append(colored(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name}", "red"))
+                        output_lines.append(colored(f"{basic_info}", "red"))
                     elif job_state in ("COMPLETED"):
                         if ARG.show_completed:
                             elapsed = entry_info.get("Elapsed", "N/A")
                             output_lines.append(colored(f"{basic_info}, Elapsed: {elapsed}", "magenta"))
                     elif job_state not in ("COMPLETED"):
-                        output_lines.append(colored(f"\tStep: {step}, Job ID: {job_id}, State: {job_state}, Job Name: {job_name} (unexpected state)", "yellow"))
+                        output_lines.append(colored(f"{basic_info} (unexpected state)", "yellow"))
                 if len(output_lines) > 1:
                     print("\n".join(output_lines))
         if ARG.subcommand == "retire":
@@ -325,8 +344,11 @@ def main():
                 output_lines = [f"{SUBDIR_REL} pipeline retire:"]
                 for entry in DAG_flt:
                     step = entry.get("step", "N/A")
+                    slurm_id = entry.get("slurm_id", None)
                     job_id = entry.get("job_id", "N/A")
-                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"} )
+                    if slurm_id is None:
+                        slurm_id = job_id  # Fallback to job_id if slurm_id is not present
+                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(slurm_id) if slurm_id != "N/A" else {"State": "UNKNOWN"} )
                     job_state = entry_info["State"]
                     job_name = entry_info.get("JobName", "N/A")
                     retired = entry.get("retired", False)

@@ -4,6 +4,9 @@
 from typing import Union, List, Dict
 import subprocess
 import logging
+import re
+
+
 # Create a logger specific to this module
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)  # Set the logging level to INFO
@@ -117,6 +120,9 @@ def slurm_sacct_info(slurm_ids: Union[str, int, List[str], List[int]]) -> Union[
         result = subprocess.run(
             CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode != 0:
+            #Print stacktrace
+            import traceback
+            print(traceback.print_stack())
             log.error(
                 f"Error while running %s:\n\t{result.stderr}" % (" ".join(CMD)))
             return slurm_sacct_info_fallback_single(slurm_ids, non_list_input)
@@ -201,3 +207,60 @@ def slurm_squeue_info(slurm_ids: Union[str, int, List[str], List[int]]) -> Union
         return all_info[0]
     else:
         return all_info
+
+def get_active_slurmids(dependency_dag_entries, raise_on_fail=False):
+    """ 
+    Given a list of SLURM job IDs, return only the IDs that are active
+    (PENDING or RUNNING). Optionally raise an exception if any job has FAILED.
+    
+    Parameters
+    ----------
+    dependency_dag_entries : list of dict
+	    Each dict should contain at least the keys "slurm_id" and "slurm_info" (which itself is a dict containing the job's state).
+    raise_on_fail : bool
+        If True, raises RuntimeError if any job is in FAILED/CANCELLED state.
+    
+    Returns
+    -------
+    active_ids : list of int
+        Job IDs that are still active (PENDING or RUNNING).
+    """
+    active_ids = []
+    for entry in dependency_dag_entries:
+        slurm_id = entry["slurm_id"]
+        job_name = entry.get("job_name", "UNKNOWN")
+        status = entry.get("slurm_info", {}).get("State", "UNKNOWN")
+        if status in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
+            active_ids.append(slurm_id)
+        elif status in ("FAILED", "CANCELLED", "TIMEOUT"):
+            msg = f"Dependency job {job_name}, ID={slurm_id} has failed with status {status}"
+            if raise_on_fail:
+                raise RuntimeError(msg)
+            else:
+                print("WARNING:", msg)
+        else:
+            if status not in ("COMPLETED"):
+                print(f"WARNING: Job {job_name}, ID={slurm_id} has unexpected status {status}. Treating as finished.")
+            # Else, COMPLETED or other terminal state -> ignore
+    return active_ids
+
+#Run a Slurm command and return its JobID.
+def run_slurm_command(SLURM_CMD: List[str], cwd: str = None) -> Union[int, None]:
+    """Run a Slurm command and return the result."""
+    try:
+        result = subprocess.run(SLURM_CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd)
+        if result.returncode != 0:
+            log.error(f"Error while running %s:\n\t{result.stderr}" % (" ".join(SLURM_CMD)))
+            return None
+        output = result.stdout.strip()
+        match = re.search(r"Submitted batch job (\d+)", output)
+        if match:
+            # Return the job ID (converted to an integer)
+            job_id = int(match.group(1))
+            return job_id
+        else:
+            log.error(f"Could not find job ID in output:\n{output_lines}")
+            return None
+    except Exception as e:
+        log.error(f"Error while running %s:\n\t{e}" % (" ".join(SLURM_CMD)))
+        return None
