@@ -138,7 +138,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Simulate the submission without actually submitting jobs or crating files")
     parser.add_argument("--verbose", action="store_true", help="Print detailed information about the submission process")
     parser.add_argument("--pipeline-step", type=int, default=-1, help="Pipeline step number to create DAGs for")
-    parser.add_argument("--skip-range", type=str, choices=["none", "cmd", "jobname", "step"], default="jobname", help="Scope of skipping DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'jobname'.")
+    parser.add_argument("--skip-range", type=str, choices=["none", "cmd", "jobname", "step"], default="cmd", help="Scope of skipping DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
     parser.add_argument("--skip-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["PENDING", "RUNNING", "REQUEUED"], help="SLURM job states to yield to command submitted in the same step with coresponging state. Default is PENDING, RUNNING, REQUEUED.")
     parser.add_argument("--retire-range", type=str, choices=["none", "cmd", "step"], default="cmd", help="Scope of retiring DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
     parser.add_argument("--retire-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["FAILED", "CANCELLED", "TIMEOUT"], help="SLURM job states that trigger retiring of DAG entries in the same step on new submission with --retire-range set to 'cmd' or 'step'. Default is FAILED, CANCELLED, TIMEOUT.")
@@ -323,7 +323,7 @@ def main():
                     if len(skip_entries) > 0:
                         skip_entries = get_slurmids_by_state(skip_entries, ARG.skip_state)
                         if len(skip_entries) > 0:
-                            print(f"Skipping submission for {SUBDIR_REL} because there are {len(skip_entries)} active entries with the same command in the same step and state in {ARG.skip_state}: {skip_entries}")
+                            print(f"Skipping submission for {SUBDIR_REL} because there are {len(skip_entries)} active entries with the same skip range {ARG.skip_range} in {ARG.skip_state}: {skip_entries}")
                             continue
                     try: 
                         DAG_ID = uuid.uuid4().hex
