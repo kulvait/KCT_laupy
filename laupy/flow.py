@@ -197,7 +197,7 @@ def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_nam
         DAG_ENTRY["script_name"] = script_name
         DAG_ENTRY["job_name"] = job_name
         DAG_ENTRY["dag_node_name"] = dag_node_or_step_name
-        DAG_ENTRY["command"] = "".join(cmd)
+        DAG_ENTRY["command"] = " ".join(cmd)
         DAG_ENTRY["slurm_command"] = slurm_cmd
         DAG_ENTRY["execution_unit_name"] = os.path.basename(execution_unit_dir)
         DAG_ENTRY["execution_unit_dir"] = execution_unit_dir
