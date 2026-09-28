@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 #Following https://uoftcoders.github.io/studyGroup/lessons/python/packages/lesson/
 
@@ -16,9 +16,9 @@ setup(
     name='laupy',
     url='https://github.com/kulvait/KCT_laupy',
     author='Vojtech Kulvait',
-    author_email='vojtech.kulvait@hereon.de',
+    author_email='kulvait@gmail.com',
     # Needed to actually package something
-    packages=['laupy'],
+    packages=find_packages(),
     # Needed for dependencies
     install_requires=pkg_requires,
     entry_points={
