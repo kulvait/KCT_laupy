@@ -19,6 +19,8 @@ setup(
     author_email='kulvait@gmail.com',
     # Needed to actually package something
     packages=find_packages(),
+    # Files in package
+    package_data={"laupy": ["maxwell.tsv"],},
     # Needed for dependencies
     install_requires=pkg_requires,
     entry_points={
