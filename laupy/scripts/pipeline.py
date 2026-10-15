@@ -190,8 +190,8 @@ def main():
     pipeline_group.add_argument("--clean-dag", action="store_true", help="Clean DAG entries for the specified pipeline.")
     subparsers = parser.add_subparsers(dest="subcommand", help="Actions")
     # log action for showing SLURM logs for a specific pipeline step or job ID
-    log_parser = subparsers.add_parser("log", help="Show SLURM logs for the specified pipeline step")
-    log_parser.add_argument("id", type=str, help="DAG ID or Job ID to show logs for")
+    log_parser = subparsers.add_parser("log", help="Show SLURM logs for the specified job")
+    log_parser.add_argument("id", type=str, help="DAG job ID or SLURM job ID to show logs for")
     log_parser.add_argument("--stdout", action="store_true", help="Show the standard output logs for the specified pipeline step.")
     log_parser.add_argument("--stderr", action="store_true", help="Show the error output logs for the specified pipeline step.")
     # status action for showing status of all pipeline steps with color coding
@@ -393,7 +393,7 @@ def main():
         if ARG.subcommand == "log":
             DAG = load_dag(SUBDIR_ABS)
             update_dag_entries(DAG, update_retired=True, update_negative_step=True, filter_terminal_states=False)
-            DAG_flt = [ entry for entry in DAG if str(entry.get("job_id", "")) == ARG.id or str(entry.get("step", "")) == ARG.id ]
+            DAG_flt = [ entry for entry in DAG if str(entry.get("job_id", "")) == ARG.id or str(entry.get("slurm_id", "")) == ARG.id ]
             if not ARG.stdout and not ARG.stderr:
                 ARG.stdout = True
                 ARG.stderr = True

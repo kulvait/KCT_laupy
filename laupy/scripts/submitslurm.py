@@ -137,7 +137,27 @@ def main():
     parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
     parser.add_argument("--dry-run", action="store_true", help="Simulate the submission without actually submitting jobs or crating files")
     parser.add_argument("--verbose", action="store_true", help="Print detailed information about the submission process")
-    parser.add_argument("--pipeline-step", type=int, default=-1, help="Pipeline step number to create DAGs for")
+    scheduling_group = parser.add_mutually_exclusive_group()
+    scheduling_group.add_argument(
+        "--pipeline-step",
+        type=int,
+        default=None,
+        help="Numeric pipeline step; mutually exclusive with --dag-node-name",
+    )
+    scheduling_group.add_argument(
+        "--dag-node-name",
+        type=str,
+        default=None,
+        help="Named DAG node; uses only explicit DAG dependencies",
+    )
+    parser.add_argument(
+        "--dag-node-deps",
+        type=parse_comma_separated,
+        action="append",
+        default=None,
+        metavar="NODE[,NODE...]",
+        help="Dependencies for --dag-node-name; comma-separated or repeated, can also be numeric pipeline steps (e.g., 0,1,2). Mutually exclusive with --pipeline-step.",
+    )
     parser.add_argument("--skip-range", type=str, choices=["none", "cmd", "jobname", "step"], default="cmd", help="Scope of skipping DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
     parser.add_argument("--skip-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["PENDING", "RUNNING", "REQUEUED"], help="SLURM job states to yield to command submitted in the same step with coresponging state. Default is PENDING, RUNNING, REQUEUED.")
     parser.add_argument("--retire-range", type=str, choices=["none", "cmd", "step"], default="cmd", help="Scope of retiring DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
