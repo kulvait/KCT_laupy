@@ -149,7 +149,7 @@ def constructDAG(DAG_ENTRIES: list) -> nx.DiGraph:
         raise ValueError(f"DAG contains a cycle: {cycle}")
     return dag
 
-def resubmit_slurm_job(DAG_ENTRIES: list, entry_id: Union[str, int, Dict]):
+def resubmit_slurm_job(DAG_ENTRIES: list, entry_id: Union[str, int, Dict], env=None):
     """Resubmit a SLURM job based on the provided DAG entry and update the DAG with the new job ID."""
     try:
         if isinstance(entry_id, dict):
@@ -169,13 +169,13 @@ def resubmit_slurm_job(DAG_ENTRIES: list, entry_id: Union[str, int, Dict]):
         JOB_ID = uuid.uuid4().hex
         ROOTDIR = os.path.dirname(os.path.dirname(os.path.abspath(DAG_ENTRY["execution_unit_dir"])))
         SLURM_CMD = DAG_ENTRY["slurm_command"].copy()  # Create a copy of the SLURM command to avoid modifying the original
-        NEW_DAG_ENTRY = schedule_slurm_job(DAG_ENTRIES=DAG_ENTRIES, dag_node_or_step_name=DAG_ENTRY["dag_node_name"], script_name=DAG_ENTRY["script_name"], job_name=DAG_ENTRY["job_name"], execution_unit_dir=DAG_ENTRY["execution_unit_dir"], slurm_cmd=SLURM_CMD, cmd=[DAG_ENTRY["command"]], dag_dependencies=DAG_ENTRY.get("dag_node_deps", []))
+        NEW_DAG_ENTRY = schedule_slurm_job(DAG_ENTRIES=DAG_ENTRIES, dag_node_or_step_name=DAG_ENTRY["dag_node_name"], script_name=DAG_ENTRY["script_name"], job_name=DAG_ENTRY["job_name"], execution_unit_dir=DAG_ENTRY["execution_unit_dir"], slurm_cmd=SLURM_CMD, cmd=[DAG_ENTRY["command"]], dag_dependencies=DAG_ENTRY.get("dag_node_deps", []), env=env)
         return NEW_DAG_ENTRY
     except Exception as e:
         log.error(f"Error resubmitting SLURM job for node '{DAG_ENTRY['dag_node_name']}': {e}")
         return None
 
-def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_name: str, job_name: str, execution_unit_dir: str, slurm_cmd: list, cmd: list, dag_dependencies: list = None):
+def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_name: str, job_name: str, execution_unit_dir: str, slurm_cmd: list, cmd: list, dag_dependencies: list = None, env=None) -> dict:
     """Submit a SLURM job based on the provided job entry and update the DAG with the job ID."""
     try:
         for entry in DAG_ENTRIES:
@@ -221,7 +221,7 @@ def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_nam
             if len(active_dependencies) > 0:
                 SLURM_CMD.insert(1, f"--dependency=afterok:{':'.join(str(jid) for jid in active_dependencies)}")
         # For negative nodes, run the command directly without submitting to SLURM
-        slurm_id = run_slurm_command(SLURM_CMD, cwd=ROOTDIR)
+        slurm_id = run_slurm_command(SLURM_CMD, cwd=ROOTDIR, env=env)
         DAG_ENTRY["job_id"] = JOB_ID
         DAG_ENTRY["slurm_id"] = slurm_id
         DAG_ENTRY["retired"] = False

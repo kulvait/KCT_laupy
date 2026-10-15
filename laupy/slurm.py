@@ -245,10 +245,10 @@ def get_active_slurmids(dependency_dag_entries, raise_on_fail=False):
     return active_ids
 
 #Run a Slurm command and return its JobID.
-def run_slurm_command(SLURM_CMD: List[str], cwd: str = None) -> Union[int, None]:
+def run_slurm_command(SLURM_CMD: List[str], cwd: str = None, env=None) -> Union[int, None]:
     """Run a Slurm command and return the result."""
     try:
-        result = subprocess.run(SLURM_CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd)
+        result = subprocess.run(SLURM_CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, env=env)
         if result.returncode != 0:
             log.error(f"Error while running %s:\n\t{result.stderr}" % (" ".join(SLURM_CMD)))
             return None
