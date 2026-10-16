@@ -290,6 +290,7 @@ def main():
             else:
                 output_lines = [f"{SUBDIR_REL} pipeline status:"]
                 for entry in DAG:
+                    dag_node_name = entry.get("dag_node_name", None)
                     step = entry.get("step", "N/A")
                     slurm_id = entry.get("slurm_id", None)
                     job_id = entry.get("job_id", "N/A")
@@ -301,7 +302,7 @@ def main():
                     slurm_command = entry.get("slurm_command", "")
                     command = entry.get("command", "")
                     dependencies = entry.get("dependencies", [])
-                    basic_info = f"\tStep: {step}, Slurm ID: {slurm_id}, Job Name: {job_name}, State: {job_state}"
+                    basic_info = f"\tDAG node/step: {dag_node_name}, Slurm ID: {slurm_id}, Job Name: {job_name}, State: {job_state}"
                     retired = entry.get("retired", False)
                     if retired == True and not ARG.show_retired:
                         continue  # Skip retired jobs

@@ -28,19 +28,27 @@ log.addHandler(ch)
 log.propagate = False  # Prevent log messages from being propagated to the root logger
 
 
-def update_dag_entries(DAG: list, pipeline_step: int = -1, update_retired: bool = False, update_negative_step: bool = False, filter_terminal_states: bool = True) -> None:
+def update_dag_entries(DAG: list, limit_to_ancestors_including_node: str = "-1", update_retired: bool = False, update_negative_step: bool = False, filter_terminal_states: bool = True, node_dependencies: list = None) -> None:
     """Update DAG entries with current SLURM info for active dependencies and same step entries to evaluate skip conditions and retirement.
-       Updates all entries with "step" < pipeline_step, for negative pipeline_step, updates all entries."""
+       Updates all entries with "step" < limit_to_ancestors_including_node, for negative limit_to_ancestors_including_node, updates all entries."""
     DAG_flt = DAG
     if not update_negative_step:
-        DAG_flt = [ entry for entry in DAG_flt if entry["step"] >=0  ]
+        # Because step -2 is used for named nodes, not update_negative_step omits only entries with step -1, which are used for dangling nodes
+        DAG_flt = [ entry for entry in DAG_flt if entry["step"] != -1 ]
     if not update_retired:
         DAG_flt = [ entry for entry in DAG_flt if not entry.get("retired", False) ]
-    if pipeline_step >= 0:
-        DAG_flt = [ entry for entry in DAG_flt if entry["step"] <= pipeline_step ]
     if filter_terminal_states:
         #If entry is in terminal state and has already its slurm_info, do not query it
         DAG_flt = [ entry for entry in DAG_flt if not ( "slurm_info" in entry and entry["slurm_info"]["State"] in ["COMPLETED", "FAILED", "CANCELLED"] ) ]
+    if limit_to_ancestors_including_node != "-1":
+        NODE = {}
+        NODE["dag_node_name"] = limit_to_ancestors_including_node
+        NODE["dag_node_deps"] = node_dependencies if node_dependencies else []
+        log.info(f"NODE[dag_node_deps] = {NODE['dag_node_deps']}")
+        GRAPH = constructDAG(DAG_flt + [NODE]) # Construct a temporary DAG including the node to get its ancestors
+        #Get all ancestors, including the limit_to_ancestors_including_node itself, to update only relevant entries
+        ancestors = nx.ancestors(GRAPH, limit_to_ancestors_including_node)
+        DAG_flt = [ entry for entry in DAG_flt if entry["dag_node_name"] in ancestors or entry["dag_node_name"] == limit_to_ancestors_including_node ]
     #Get entries of potential dependencies and same step entries and same step and command entries to evaluate skip conditions and retirement
     job_ids = [ entry["job_id"] for entry in DAG_flt]
     slurm_ids = []
@@ -175,7 +183,7 @@ def resubmit_slurm_job(DAG_ENTRIES: list, entry_id: Union[str, int, Dict], env=N
         log.error(f"Error resubmitting SLURM job for node '{DAG_ENTRY['dag_node_name']}': {e}")
         return None
 
-def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_name: str, job_name: str, execution_unit_dir: str, slurm_cmd: list, cmd: list, dag_dependencies: list = None, env=None) -> dict:
+def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_name: str, job_name: str, execution_unit_dir: str, slurm_cmd: list, cmd: list, node_dependencies: list = None, env=None) -> dict:
     """Submit a SLURM job based on the provided job entry and update the DAG with the job ID."""
     try:
         for entry in DAG_ENTRIES:
@@ -210,7 +218,7 @@ def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_nam
                 negative_node = True
         else:
             DAG_ENTRY["step"] = -2  # Use -2 for named nodes
-            DAG_ENTRY["dag_node_deps"] = dag_dependencies if dag_dependencies else []
+            DAG_ENTRY["dag_node_deps"] = node_dependencies if node_dependencies else []
         if not negative_node:
             DAG = constructDAG(DAG_ENTRIES + [DAG_ENTRY])
             #Get all ancestors

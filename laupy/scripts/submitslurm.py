@@ -11,6 +11,7 @@ import shlex
 import json
 import re
 import uuid
+import logging
 from laupy import slurm
 from laupy.flow import load_dag, save_dag, clean_dag
 from laupy.flow import update_dag_entries, schedule_slurm_job
@@ -18,6 +19,19 @@ from laupy.slurm import get_active_slurmids, run_slurm_command
 
 import subprocess
 
+# Create a logger specific to this module
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)  # Set the logging level to INFO
+# Create a console handler and set its level to INFO
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+# Create a formatter and set it for the handler
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s:%(lineno)d - %(levelname)s : %(message)s', datefmt='%d.%m.%Y %H:%M:%S')
+ch.setFormatter(formatter)
+# Add the handler to the logger
+log.addHandler(ch)
+log.propagate = False  # Prevent log messages from being propagated to the root logger
 
 def get_slurmids_by_state(dag_entries, states):
     """
@@ -138,26 +152,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Simulate the submission without actually submitting jobs or crating files")
     parser.add_argument("--verbose", action="store_true", help="Print detailed information about the submission process")
     scheduling_group = parser.add_mutually_exclusive_group()
-    scheduling_group.add_argument(
-        "--pipeline-step",
-        type=int,
-        default=None,
-        help="Numeric pipeline step; mutually exclusive with --dag-node-name",
-    )
-    scheduling_group.add_argument(
-        "--dag-node-name",
-        type=str,
-        default=None,
-        help="Named DAG node; uses only explicit DAG dependencies",
-    )
-    parser.add_argument(
-        "--dag-node-deps",
-        type=parse_comma_separated,
-        action="append",
-        default=None,
-        metavar="NODE[,NODE...]",
-        help="Dependencies for --dag-node-name; comma-separated or repeated, can also be numeric pipeline steps (e.g., 0,1,2). Mutually exclusive with --pipeline-step.",
-    )
+    scheduling_group.add_argument("--pipeline-step", type=str, default="-1", help="Pipeline step number or DAG node name. Uses only explicit DAG dependencies. Default is -1, which are not put or evaluated against DAG.")
+    parser.add_argument("--dependencies", type=parse_comma_separated, action="append", default=None, metavar="NODE[,NODE...]", help="Dependencies for non numeric --pipeline-step/DAG node, comma-separated or repeated. Can also be numeric pipeline steps (e.g., 0,1,2), numeric pipeline steps can not have explicit --dependencies. Default is None.")
     parser.add_argument("--skip-range", type=str, choices=["none", "cmd", "jobname", "step"], default="cmd", help="Scope of skipping DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
     parser.add_argument("--skip-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["PENDING", "RUNNING", "REQUEUED"], help="SLURM job states to yield to command submitted in the same step with coresponging state. Default is PENDING, RUNNING, REQUEUED.")
     parser.add_argument("--retire-range", type=str, choices=["none", "cmd", "step"], default="cmd", help="Scope of retiring DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
@@ -306,6 +302,7 @@ def main():
             SLURM_CMD = SLURM_CMD_REL
             print(f"SLURM in {subdir_dct['subdir_abs']}")
             print(" ".join(SLURM_CMD))
+            dependencies = [ dep for group in (ARG.dependencies or []) for dep in group ] if ARG.dependencies else []
         if not ARG.dry_run:
             PIPELINE_DIR = os.path.join(SUBDIR_ABS, "pipeline")
             PIPELINE_LOG_DIR = os.path.join(PIPELINE_DIR, "log")
@@ -321,19 +318,31 @@ def main():
                 os.makedirs(PIPELINE_LOG_DIR, exist_ok=True)
                 #Append command to pipeline/exec.sh
             if not ARG.create_pipeline_only and not ARG.delete_pipeline_only and not ARG.clean_dag:
-                DAG = load_dag(SUBDIR_ABS)
-                update_dag_entries(DAG, pipeline_step=ARG.pipeline_step, update_retired=False, update_negative_step=False, filter_terminal_states=True)
-                if ARG.pipeline_step > -1:
+                if ARG.pipeline_step != "-1":
+                    try:
+                        integer_pipeline_step = int(ARG.pipeline_step)
+                        if integer_pipeline_step < 0:
+                            log.warning(f"Negative numeric pipeline step {integer_pipeline_step} different from -1 is not allowed. Skipping submission for {SUBDIR_REL}.")
+                            continue  # Skip negative numeric nodes
+                        else:
+                            dag_node_name = f"{integer_pipeline_step}"
+                            if ARG.dependencies is not None:
+                                msg = f"Error: --dependencies can not be used with numeric --pipeline-step {ARG.pipeline_step}. Use a non-numeric DAG node name for --pipeline-step to specify explicit dependencies."
+                                log.error(msg)
+                    except ValueError:
+                         dag_node_name = ARG.pipeline_step
+                    DAG = load_dag(SUBDIR_ABS)
+                    update_dag_entries(DAG, limit_to_ancestors_including_node=dag_node_name, update_retired=False, update_negative_step=False, filter_terminal_states=True, node_dependencies=dependencies)
                     #Get entries of potential dependencies and same step entries and same step and command entries to evaluate skip conditions and retirement
-                    step_dag_entries = [ entry for entry in DAG if entry["step"] == ARG.pipeline_step and "job_id" in entry and not entry.get("retired", False) ]
-                    cmd_dag_entries = [ entry for entry in step_dag_entries if entry["command"] == " ".join(EXEC_CMD_ABS) ]
-                    scriptname_dag_entries = [ entry for entry in step_dag_entries if entry.get("script_name", "") == SCRIPTNAME ]
-                    jobname_dag_entries = [ entry for entry in step_dag_entries if entry.get("slurm_info", {}).get("JobName", "") == JOBNAME ]
+                    node_dag_entries = [ entry for entry in DAG if entry["dag_node_name"] == dag_node_name and "job_id" in entry and not entry.get("retired", False) ]
+                    cmd_dag_entries = [ entry for entry in node_dag_entries if entry["command"] == " ".join(EXEC_CMD_ABS) ]
+                    scriptname_dag_entries = [ entry for entry in node_dag_entries if entry.get("script_name", "") == SCRIPTNAME ]
+                    jobname_dag_entries = [ entry for entry in node_dag_entries if entry.get("slurm_info", {}).get("JobName", "") == JOBNAME ]
                     #Evaluate skip conditions
                     if ARG.skip_range == "cmd":
                         skip_entries = cmd_dag_entries
                     elif ARG.skip_range == "step":
-                        skip_entries = step_dag_entries
+                        skip_entries = node_dag_entries
                     elif ARG.skip_range == "jobname":
                         skip_entries = jobname_dag_entries
                     elif ARG.skip_range == "scriptname":
@@ -353,7 +362,7 @@ def main():
                             if ARG.cancel_range == "cmd":
                                 cancel_candidates = cmd_dag_entries
                             elif ARG.cancel_range == "step":
-                                cancel_candidates = step_dag_entries
+                                cancel_candidates = node_dag_entries
                             cancel_slurmids = get_slurmids_by_state(cancel_candidates, ARG.cancel_state)
                             for jid in cancel_slurmids:
                                 entry = next((entry for entry in cancel_candidates if entry["job_id"] == jid), None)
@@ -369,7 +378,7 @@ def main():
                             if ARG.retire_range == "cmd":
                                 retire_candidates = cmd_dag_entries
                             elif ARG.retire_range == "step":
-                                retire_candidates = step_dag_entries
+                                retire_candidates = node_dag_entries
                             retire_slurmids = get_slurmids_by_state(retire_candidates, ARG.retire_state)
                             for entry in retire_candidates:
                                 if entry["job_id"] in retire_slurmids and not entry.get("retired", False):
@@ -378,7 +387,7 @@ def main():
                                     entry["redired_by"] = DAG_ID
                                     entry["retired_reason"] = f"Retired due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}"
                                     print(f"Retiring DAG entry with job ID {entry['job_id']} due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}")
-                        DAG_ENTRY = schedule_slurm_job(DAG, ARG.pipeline_step, SCRIPTNAME, JOBNAME, SUBDIR_ABS, SLURM_CMD_ABS, EXEC_CMD_ABS, None)
+                        DAG_ENTRY = schedule_slurm_job(DAG, dag_node_name, SCRIPTNAME, JOBNAME, SUBDIR_ABS, SLURM_CMD_ABS, EXEC_CMD_ABS, node_dependencies=dependencies)
                         if DAG_ENTRY is not None:
                             DAG.append(DAG_ENTRY)
                             save_dag(SUBDIR_ABS, DAG)
