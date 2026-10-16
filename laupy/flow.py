@@ -130,6 +130,15 @@ def constructDAG(DAG_ENTRIES: list) -> nx.DiGraph:
             max_numeric_node = max(max_numeric_node, numeric_node)
         except ValueError:
             dag.add_node(node)  # Add named nodes directly
+        #Test numeric dependencies against max_numeric_node
+        for dep in entry.get("dag_node_deps", []):
+            try:
+                numeric_dep = int(dep)
+                if numeric_dep < 0:
+                    continue  # Skip negative numeric dependencies
+                max_numeric_node = max(max_numeric_node, numeric_dep)
+            except ValueError:
+                pass  # Ignore non-numeric dependencies for max_numeric_node calculation
 
     #Make chain of existing numeric nodes
     for i in range(max_numeric_node):
@@ -186,15 +195,6 @@ def resubmit_slurm_job(DAG_ENTRIES: list, entry_id: Union[str, int, Dict], env=N
 def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_name: str, job_name: str, execution_unit_dir: str, slurm_cmd: list, cmd: list, node_dependencies: list = None, env=None) -> dict:
     """Submit a SLURM job based on the provided job entry and update the DAG with the job ID."""
     try:
-        for entry in DAG_ENTRIES:
-            dag_node_name = entry.get("dag_node_name", None)
-            # START To remove 
-            if dag_node_name is None:
-                dag_node_name = str(entry.get("step", 0))  # Fallback to step if dag_node_name is not provided
-            slurm_id = entry.get("slurm_id", None)
-            if slurm_id is None:
-                entry["slurm_id"] = entry["job_id"]  # Fallback to job_id if slurm_id is not provided
-            # END To remove
         JOB_ID = uuid.uuid4().hex
         ROOTDIR = os.path.dirname(os.path.dirname(os.path.abspath(execution_unit_dir)))
         dag_node_or_step_name = str(dag_node_or_step_name)  # Normalize to string for consistent handling

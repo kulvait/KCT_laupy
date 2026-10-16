@@ -294,9 +294,9 @@ def main():
                     step = entry.get("step", "N/A")
                     slurm_id = entry.get("slurm_id", None)
                     job_id = entry.get("job_id", "N/A")
+                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(slurm_id) if slurm_id is not None else {"State": "UNKNOWN"} )
                     if slurm_id is None:
                         slurm_id = job_id  # Fallback to job_id if slurm_id is not present
-                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(slurm_id) if job_id != "N/A" else {"State": "UNKNOWN"} )
                     job_state = entry_info["State"]
                     job_name = entry_info.get("JobName", "N/A")
                     slurm_command = entry.get("slurm_command", "")
@@ -347,9 +347,7 @@ def main():
                     step = entry.get("step", "N/A")
                     slurm_id = entry.get("slurm_id", None)
                     job_id = entry.get("job_id", "N/A")
-                    if slurm_id is None:
-                        slurm_id = job_id  # Fallback to job_id if slurm_id is not present
-                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(slurm_id) if slurm_id != "N/A" else {"State": "UNKNOWN"} )
+                    entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(slurm_id) if slurm_id is not None else {"State": "UNKNOWN"} )
                     job_state = entry_info["State"]
                     job_name = entry_info.get("JobName", "N/A")
                     retired = entry.get("retired", False)
