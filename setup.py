@@ -9,7 +9,7 @@ except FileNotFoundError:
 	print('version.py not found, using default version 0.0.0')
 	__version__ = '0.0.0'
 
-pkg_requires = ['termcolor', 'psutil']
+pkg_requires = ['termcolor', 'psutil', 'networkx']
 
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
