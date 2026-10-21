@@ -344,6 +344,7 @@ def main():
             else:
                 output_lines = [f"{SUBDIR_REL} pipeline retire:"]
                 for entry in DAG_flt:
+                    dag_node_name = entry.get("dag_node_name", None)
                     step = entry.get("step", "N/A")
                     slurm_id = entry.get("slurm_id", None)
                     job_id = entry.get("job_id", "N/A")
@@ -351,7 +352,7 @@ def main():
                     job_state = entry_info["State"]
                     job_name = entry_info.get("JobName", "N/A")
                     retired = entry.get("retired", False)
-                    basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}"
+                    basic_info = f"\tNode: {dag_node_name}, Job ID: {job_id}, Slurm ID: {slurm_id}, Job Name: {job_name}, State: {job_state}"
                     if job_state in ("FAILED", "CANCELLED", "TIMEOUT"):
                         entry["retired"] = True
                         output_lines.append(colored(f"{basic_info} -> Marked as retired", "red"))
@@ -374,14 +375,21 @@ def main():
                 output_lines = [f"{SUBDIR_REL} pipeline cancel:"]
             for entry in DAG_flt:
                 step = entry.get("step", "N/A")
+                dag_node_name = entry.get("dag_node_name", None)
                 job_id = entry.get("job_id", "N/A")
+                slurm_id = entry.get("slurm_id", None)
                 entry_info = entry.get("slurm_info", {}) if "slurm_info" in entry else ( slurm.slurm_info(job_id) if job_id != "N/A" else {"State": "UNKNOWN"} )
+                if slurm_id is None:
+                    slurm_id = entry_info.get("JobID", None)
+                if slurm_id is None:
+                    output_lines.append(colored(f"\tNode: {dag_node_name}, Job ID: {job_id} -> No SLURM ID found, cannot cancel", "red"))
+                    continue
                 job_state = entry_info["State"]
                 job_name = entry_info.get("JobName", "N/A")
-                basic_info = f"\tStep: {step}, Job ID: {job_id}, Job Name: {job_name}, State: {job_state}"
+                basic_info = f"\tNode: {dag_node_name}, Job ID: {job_id}, Slurm ID: {slurm_id}, Job Name: {job_name}, State: {job_state}"
                 if job_state in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
                     try:
-                        run(["scancel", str(job_id)], check=True)
+                        run(["scancel", str(slurm_id)], check=True)
                         output_lines.append(colored(f"{basic_info} -> Cancelled successfully", "yellow"))
                         entry_info["State"] = "CANCELLED"
                     except Exception as e:
