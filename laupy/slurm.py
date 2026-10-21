@@ -246,21 +246,23 @@ def get_active_slurmids(dependency_dag_entries, raise_on_fail=False):
 
 #Run a Slurm command and return its JobID.
 def run_slurm_command(SLURM_CMD: List[str], cwd: str = None, env=None) -> Union[int, None]:
-    """Run a Slurm command and return the result."""
+    """Submit a SLURM command; return its job ID, or None with diagnostics."""
     try:
+        SLURM_CMD_STR = ' '.join(SLURM_CMD)
         result = subprocess.run(SLURM_CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, env=env)
         if result.returncode != 0:
-            log.error(f"Error while running %s:\n\t{result.stderr}" % (" ".join(SLURM_CMD)))
+            log.error(f"SLURM command {SLURM_CMD_STR} failed with return code {result.returncode}.\n"
+                f"  cwd: {cwd}\n  stdout: {result.stdout}\n  stderr: {result.stderr}")
             return None
         output = result.stdout.strip()
         match = re.search(r"Submitted batch job (\d+)", output)
         if match:
-            # Return the job ID (converted to an integer)
-            job_id = int(match.group(1))
-            return job_id
+            return int(match.group(1))
         else:
-            log.error(f"Could not find job ID in output:\n{output_lines}")
+            log.error(f"SLURM command {SLURM_CMD_STR} exited successfully, but no job ID was recognized.\n"
+                "Submission outcome is uncertain; check SLURM before retrying.\n"
+                f"  cwd: {cwd}\n  stdout: {result.stdout}\n  stderr: {result.stderr}")
             return None
     except Exception as e:
-        log.error(f"Error while running %s:\n\t{e}" % (" ".join(SLURM_CMD)))
+        log.exception("Exception while running SLURM command or parsing its output.\n aggv: %s\n cwd: %s\n env: %s", SLURM_CMD, cwd, env)
         return None

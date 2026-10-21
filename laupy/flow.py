@@ -186,7 +186,17 @@ def resubmit_slurm_job(DAG_ENTRIES: list, entry_id: Union[str, int, Dict], env=N
         JOB_ID = uuid.uuid4().hex
         ROOTDIR = os.path.dirname(os.path.dirname(os.path.abspath(DAG_ENTRY["execution_unit_dir"])))
         SLURM_CMD = DAG_ENTRY["slurm_command"].copy()  # Create a copy of the SLURM command to avoid modifying the original
-        NEW_DAG_ENTRY = schedule_slurm_job(DAG_ENTRIES=DAG_ENTRIES, dag_node_or_step_name=DAG_ENTRY["dag_node_name"], script_name=DAG_ENTRY["script_name"], job_name=DAG_ENTRY["job_name"], execution_unit_dir=DAG_ENTRY["execution_unit_dir"], slurm_cmd=SLURM_CMD, cmd=[DAG_ENTRY["command"]], dag_dependencies=DAG_ENTRY.get("dag_node_deps", []), env=env)
+        NEW_DAG_ENTRY = schedule_slurm_job(
+            DAG_ENTRIES=DAG_ENTRIES,
+            dag_node_or_step_name=DAG_ENTRY["dag_node_name"],
+            script_name=DAG_ENTRY["script_name"],
+            job_name=DAG_ENTRY["job_name"],
+            execution_unit_dir=DAG_ENTRY["execution_unit_dir"],
+            slurm_cmd=SLURM_CMD,
+            cmd=[DAG_ENTRY["command"]],
+            node_dependencies=DAG_ENTRY.get("dag_node_deps", []),
+            env=env,
+        )
         return NEW_DAG_ENTRY
     except Exception as e:
         log.error(f"Error resubmitting SLURM job for node '{DAG_ENTRY['dag_node_name']}': {e}")
@@ -230,6 +240,9 @@ def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_nam
                 SLURM_CMD.insert(1, f"--dependency=afterok:{':'.join(str(jid) for jid in active_dependencies)}")
         # For negative nodes, run the command directly without submitting to SLURM
         slurm_id = run_slurm_command(SLURM_CMD, cwd=ROOTDIR, env=env)
+        if slurm_id is None:
+            log.error(f"Failed to schedule SLURM job '{job_name}' for node '{dag_node_or_step_name}'")
+            return None
         DAG_ENTRY["job_id"] = JOB_ID
         DAG_ENTRY["slurm_id"] = slurm_id
         DAG_ENTRY["retired"] = False
