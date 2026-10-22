@@ -178,7 +178,7 @@ def getGPUCount(rs, prefix):
 	return int(platform_data.get("DEVICECOUNT", 0))
 
 def insertGPU(rs, prefix, GPUID):
-	GPUCOUNT = getGPUCount()
+	GPUCOUNT = getGPUCount(rs, prefix)
 	if GPUID >= GPUCOUNT or GPUID < 0:
 		print("GPU ID %d is out of range."%(GPUID))
 		return 1
@@ -252,8 +252,6 @@ def main(argv=None):
 			print(f"Error: {e}")
 			return -1
 	
-
-	
 	rs = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=10, socket_timeout=None, decode_responses=True) #GPU acquisition might wait for a long time, so we set socket_timeout to None to avoid timeout errors
 	try:
 		rs.ping()
@@ -262,7 +260,7 @@ def main(argv=None):
 		return -1
 	
 	# Redis management setup --redis-manage-all, --redis-manage or --redis-manage-count
-	if ARG.redis_manage_all or ARG.redis_manage or ARG.redis_manage_count:
+	if ARG.redis_manage_all or ARG.redis_manage is not None or ARG.redis_manage_count is not None:
 		platforms = getOpenCLPlatforms()
 		managed_platform_id = ARG.managed_platform_id if ARG.managed_platform_id is not None else getDefaultPlatformID()
 		managed_platform = next((p for p in platforms if p["id"] == managed_platform_id), None)
@@ -300,6 +298,26 @@ def main(argv=None):
 		except Exception as e:
 			print(f"Error: {e}")
 			return -1
+	
+	if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)) and ARG.platform_list is False and ARG.default_platform_id is False:
+		print("Not managing any platform, set Redis objects fist by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.")
+		try:
+			default_platform_id = getDefaultPlatformID()
+			platforms = getOpenCLPlatforms()
+			if all(p["devices"] == [] for p in platforms):
+				print("Redis not initialized, no OpenCL platforms with devices found.")
+				return 0
+			default_platform = next((p for p in platforms if p["id"] == default_platform_id), None)
+			if default_platform is not None:
+				GPUcount = len(default_platform["devices"])
+				print("Redis not initialized, default platform ID %d has %d GPUs."%(default_platform_id, GPUcount))
+			else:
+				print("Redis not initialized, default platform ID %d not found."%(default_platform_id))
+			return 0
+		except DiscoveryError:
+				print("Redis not initialized, discovery of OpenCL platforms failed, no OpenCL platforms found.")
+				return -1
+		return -1
 	
 	if ARG.redis_managed_insert is not None:
 		return insertGPU(rs, ARG.redis_prefix, ARG.redis_managed_insert)
@@ -401,10 +419,10 @@ def main(argv=None):
 		return 0
 	
 	if ARG.info:
-		drv.init()
-		GPUcount = drv.Device.count()
+		GPUcount = getGPUCount(rs, ARG.redis_prefix)
 		managed = rs.lrange("%s_MANAGED"%(ARG.redis_prefix), 0, -1)
 		idle = rs.lrange("%s_IDLE"%(ARG.redis_prefix), 0, -1)
+		print("Managed platform ID: %d, name: %s, device count: %d"%(getManagedPlatformID(rs, ARG.redis_prefix), rs.hget("%s_PLATFORM"%(ARG.redis_prefix), "NAME"), GPUcount))
 		if len(managed) == 0:
 			print("GPU total:%d no managed"%(GPUcount))
 		else:
