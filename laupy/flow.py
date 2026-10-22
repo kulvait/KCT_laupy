@@ -2,7 +2,11 @@
 
 import os
 import json
-import networkx as nx
+#Avoid the following import as it imports whole networkx and can take long.
+#import networkx as nx
+from networkx.algorithms.dag import ancestors as nx_ancestors, is_directed_acyclic_graph as nx_is_directed_acyclic_graph
+from networkx.algorithms.cycles import find_cycle as nx_find_cycle
+from networkx.classes.digraph import DiGraph as nx_DiGraph
 from laupy import slurm
 
 # Functions for management of pipeline
@@ -47,7 +51,7 @@ def update_dag_entries(DAG: list, limit_to_ancestors_including_node: str = "-1",
         log.info(f"NODE[dag_node_deps] = {NODE['dag_node_deps']}")
         GRAPH = constructDAG(DAG_flt + [NODE]) # Construct a temporary DAG including the node to get its ancestors
         #Get all ancestors, including the limit_to_ancestors_including_node itself, to update only relevant entries
-        ancestors = nx.ancestors(GRAPH, limit_to_ancestors_including_node)
+        ancestors = nx_ancestors(GRAPH, limit_to_ancestors_including_node)
         DAG_flt = [ entry for entry in DAG_flt if entry["dag_node_name"] in ancestors or entry["dag_node_name"] == limit_to_ancestors_including_node ]
     #Get entries of potential dependencies and same step entries and same step and command entries to evaluate skip conditions and retirement
     job_ids = [ entry["job_id"] for entry in DAG_flt]
@@ -95,7 +99,7 @@ def string_is_integer(s: str) -> bool:
     except ValueError:
         return False
 
-def constructDAG(DAG_ENTRIES: list) -> nx.DiGraph:
+def constructDAG(DAG_ENTRIES: list) -> nx_DiGraph:
     """
     Construct a DAG from DAG_ENTRIES.
 
@@ -109,7 +113,7 @@ def constructDAG(DAG_ENTRIES: list) -> nx.DiGraph:
       - The resulting graph must be acyclic.
     """
 
-    dag = nx.DiGraph()
+    dag = nx_DiGraph()
     dag.add_node("dag_root")  # Add a root node for the DAG
     dag.add_node("0")  # Add the initial numeric node
     dag.add_edge("dag_root", "0")  # Connect the root to the initial numeric node
@@ -161,8 +165,8 @@ def constructDAG(DAG_ENTRIES: list) -> nx.DiGraph:
             if len(dependencies) == 0:
                 dag.add_edge("dag_root", node)
     # Validate DAG
-    if not nx.is_directed_acyclic_graph(dag):
-        cycle = nx.find_cycle(dag)
+    if not nx_is_directed_acyclic_graph(dag):
+        cycle = nx_find_cycle(dag)
         raise ValueError(f"DAG contains a cycle: {cycle}")
     return dag
 
@@ -232,7 +236,7 @@ def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_nam
         if not negative_node:
             DAG = constructDAG(DAG_ENTRIES + [DAG_ENTRY])
             #Get all ancestors
-            ancestors = nx.ancestors(DAG, dag_node_or_step_name)
+            ancestors = nx_ancestors(DAG, dag_node_or_step_name)
             dependencies = [entry for entry in DAG_ENTRIES if str(entry["dag_node_name"]) in ancestors and entry.get("retired", False) == False and "slurm_id" in entry and entry.get("slurm_info", {}).get("State", "UNKNOWN") not in ["COMPLETED"] ]
             print(f"Scheduling SLURM job '{job_name}' for node '{dag_node_or_step_name}' with dependencies: {[entry['script_name'] for entry in dependencies]}")
             active_dependencies = get_active_slurmids(dependencies, raise_on_fail=True)
