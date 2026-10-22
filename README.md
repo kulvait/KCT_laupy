@@ -58,15 +58,39 @@ For a local development editable upgrade from the git directory:
 
 ```bash
 pip install --user --upgrade --editable .
-``` 
+```
+## Design Concepts
+ 
+### Execution Units and Dependency Semantics
 
-## Package Structure
+`laupy` tracks concrete **execution units** (entries), which currently correspond to SLURM jobs in the system.  
+Each entry has its own scheduler identity (`job_id`) and execution metadata.
 
-flow.py ... core workflow orchestration logic, including DAG entries management, topological sorting, and dependency management.
+Dependencies are evaluated at two levels:
 
-### DAG ordering and tie-breaking
+1. **Numeric hierarchy** (`0 < 1 < 2 < ...`) for simple staged priority ordering.
+2. **Full DAG hierarchy** for logical entities requiring non-linear dependency structure.
 
-`laupy` uses an internal lightweight directed-graph implementation (no `networkx` dependency) for DAG validation, ancestor traversal, and topological sorting.
+A logical graph node may produce **multiple entries** (e.g., retries or resubmissions).  
+This preserves dependency correctness at the node level while keeping full observability of individual executions at the entry level.
+
+### Package Structure
+
+- **`flow.py`**  
+  Core workflow state and DAG persistence logic.  
+  Important functions include:
+  - `load_dag(...)` – load DAG/workflow state from persistent representation
+  - `store_dag(...)` – store updated DAG/workflow state back to disk
+
+- **`slurm.py`**  
+  SLURM-facing execution integration layer (submission/tracking helpers used by pipeline execution units).
+
+- **`graph_utils.py`**  
+  Internal DAG utilities used by orchestration logic (validation/order/traversal), implemented without `networkx` to keep startup and command responsiveness fast.
+
+
+**DAG ordering and tie-breaking**
+`graph_utils.py` provides uses an internal lightweight directed-graph implementation for DAG validation, ancestor traversal, and topological sorting.
 
 Topological sorting follows dependency constraints first.  
 If multiple nodes are simultaneously ready (no direct dependency relation), `laupy` applies deterministic tie-breaking:
@@ -137,6 +161,132 @@ Below is an overview of the most frequently used options
 
 - **`-e / --excellent-nodes`** and **`-s / --strong-nodes`**  
   Select special node categories (A100‑tier or strong CPU nodes).
+
+### `pipeline`
+
+`pipeline` is the operational CLI for managing and inspecting workflow execution state stored in each dataset’s `pipeline/dag.json`, with SLURM-aware status updates.
+
+It is designed for day-to-day pipeline operations around **existing execution entries** (job records), not only submission.  
+In the current model, entries correspond to SLURM jobs and carry fields such as `job_id`, optional `slurm_id`, state metadata, and node/step information.
+
+#### What `pipeline` does
+
+- loads DAG/entry state from disk (`load_dag`)
+- refreshes entry status from SLURM (`update_dag_entries`)
+- persists state changes (`save_dag`)
+- can clean DAG bookkeeping (`clean_dag`)
+- supports selective operations across one or more working directories
+
+#### Key behavior from implementation
+
+- Works per dataset subdirectory (optionally filtered by `--pattern`).
+- Supports multiple working directories via repeated `-w` or comma-separated lists.
+- Uses `pipeline` folder convention under each dataset:
+  - `pipeline/dag.json` (state)
+  - `pipeline/log/` (logs)
+- For dependency safety, active upstream jobs can be checked (pending/running/requeued/completing) before dependent work proceeds.
+
+#### Main modes
+
+- `--create`  
+  Create pipeline artifacts (ensures `pipeline/log` exists) without submitting work.
+
+- `--delete`  
+  Remove pipeline artifacts for a dataset (pipeline files and `pipeline/log`, with safe directory handling).
+
+- `--clean-dag`  
+  Clean DAG entries in `pipeline/dag.json` to resolve stale/failed dependency bookkeeping.
+
+#### Subcommands
+
+##### `pipeline status`
+Show status of all pipeline entries with SLURM state coloring and runtime context.
+
+- optional `--show-completed`
+- optional `--show-retired`
+- prints node/step/job identifiers, state, and for running jobs also elapsed/time-limit/node list
+- includes pending reason when available
+
+##### `pipeline log <id>`
+Show stored SLURM log files for a specific DAG job identifier.
+
+- `<id>` matches either `job_id` or `slurm_id`
+- `--stdout` and/or `--stderr` to control output
+- if neither flag is set, both are shown by default
+
+##### `pipeline retire`
+Mark selected entries as retired in DAG metadata (typically failed terminal jobs).
+
+Selection:
+- `--all` (default if no selector given)
+- `--job <ids...>`
+- `--step <steps...>`
+
+Filtering:
+- `--state ...` with defaults: `FAILED CANCELLED TIMEOUT`
+
+Effect:
+- sets `retired: true` for matching entries and saves DAG
+
+##### `pipeline cancel`
+Cancel active SLURM jobs represented by DAG entries.
+
+Selection:
+- `--all` (default if no selector given)
+- `--job <ids...>`
+- `--step <steps...>`
+
+Filtering:
+- `--state ...` with defaults: `PENDING RUNNING REQUEUED COMPLETING`
+
+Effect:
+- calls `scancel` on matching `slurm_id`/resolved job id
+- writes updated state back to DAG
+
+#### Common options
+
+- `-d, --root-dir` root path (defaults to current directory)
+- `-w, --working-dir` one or more working directories (default `wd`)
+- `--slurm-dir` directory containing SLURM scripts (default `sbatch`)
+- `-p, --pattern` process only matching dataset subdirectories
+- `--pipeline-step` target specific pipeline step number
+- `--dry-run` simulate actions (where applicable)
+- `--verbose` print parsed arguments and detailed processing info
+
+#### Example commands
+
+```bash
+# Show active pipeline status for all datasets in wd
+pipeline status -w wd
+
+# Show status including completed and retired entries
+pipeline status -w wd --show-completed --show-retired
+
+# Show both stdout/stderr logs for job id 10452
+pipeline log 10452 -w wd
+
+# Retire all failed/cancelled/timeout jobs (default states)
+pipeline retire -w wd --all
+
+# Retire only specific pipeline steps
+pipeline retire -w wd --step 3 4 --state FAILED TIMEOUT
+
+# Cancel all currently active jobs
+pipeline cancel -w wd --all
+
+# Cancel selected jobs only
+pipeline cancel -w wd --job 12345 12346
+
+# Clean DAG metadata, logs will be preserved but no longer referenced
+pipeline --clean-dag -w wd
+
+# Initialize pipeline directory structure
+pipeline --create -w wd
+
+# Remove pipeline data and logs for a dataset, execution history will be lost
+pipeline --delete -w wd
+```
+
 
 ## Acknowledgements
 
