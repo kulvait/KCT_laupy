@@ -149,6 +149,29 @@ def storePlatform(rs, prefix, platform):
 		},
 	)
 
+def getManagedPlatformID(rs, prefix):
+	value = rs.hget(f"{prefix}_PLATFORM", "ID")
+	if value is None:
+		raise DiscoveryError(
+			"No managed platform is stored. Initialize the pool first, "
+			"or use --default-platform-id for a suggestion."
+		)
+	return int(value)
+
+def getManagedPlatformDeviceIDs(rs, prefix):
+	managed_platform_id = getManagedPlatformID(rs, prefix)
+	managed_platform = getPlatformByID(getOpenCLPlatforms(), managed_platform_id)
+	device_ids = sorted([d["id"] for d in managed_platform["devices"]])
+	if not device_ids:
+		raise DiscoveryError(f"Managed platform {managed_platform_id} has no devices.")
+	expected = list(range(device_ids[0], device_ids[0] + len(device_ids)))
+	if device_ids != expected:
+		print(
+			"Warning: Non-contiguous device IDs on managed platform %d: %s"
+			% (managed_platform_id, ",".join(str(i) for i in device_ids))
+		)
+	return device_ids
+ 
 def getManagedGPUs(rs, prefix):
 	managed = rs.lrange("%s_MANAGED"%(prefix), 0, -1)
 	managedlist = [int(i) for i in managed]
@@ -178,10 +201,10 @@ def getGPUCount(rs, prefix):
 	return int(platform_data.get("DEVICECOUNT", 0))
 
 def insertGPU(rs, prefix, GPUID):
-	GPUCOUNT = getGPUCount(rs, prefix)
-	if GPUID >= GPUCOUNT or GPUID < 0:
-		print("GPU ID %d is out of range."%(GPUID))
-		return 1
+	valid_ids = set(getManagedPlatformDeviceIDs(rs, prefix))
+	if GPUID not in valid_ids:
+		print("GPU ID %d is not present on managed platform. Valid IDs: %s"  % (GPUID, ",".join(str(i) for i in sorted(valid_ids))))
+		 return 1
 	managed = getManagedGPUs(rs, prefix)
 	if GPUID in managed:
 		print("GPU %d is already managed."%(GPUID))
@@ -193,6 +216,7 @@ def insertGPU(rs, prefix, GPUID):
 		rs.lpush("%s_IDLE"%(prefix), GPUID)
 		print(msg)
 		return 0
+
 
 def removeGPU(rs, prefix, GPUID):
 	managed = getManagedGPUs(rs, prefix)
@@ -207,14 +231,6 @@ def removeGPU(rs, prefix, GPUID):
 		print(msg)
 		return 0
 
-def getManagedPlatformID(rs, prefix):
-	value = rs.hget(f"{prefix}_PLATFORM", "ID")
-	if value is None:
-		raise DiscoveryError(
-			"No managed platform is stored. Initialize the pool first, "
-			"or use --default-platform-id for a suggestion."
-		)
-	return int(value)
 
 def getDefaultPlatformID():
 	platforms = getOpenCLPlatforms()
@@ -266,10 +282,12 @@ def main(argv=None):
 		if managed_platform is None or len(managed_platform["devices"]) <= 0:
 			print(f"Error: No OpenCL platform with ID {managed_platform_id} found or it has no devices.")
 			return -1
-		GPUcount = len(managed_platform["devices"])
+		platform_device_ids = sorted([d["id"] for d in managed_platform["devices"]])
+		platform_device_ids = sorted(set(platform_device_ids))  # Ensure unique and sorted device IDs
+		GPUcount = len(platform_device_ids)
 		managedList = []
 		if ARG.redis_manage_all:
-			managedList = list(range(GPUcount))
+			managedList = platform_device_ids[:]
 		elif ARG.redis_manage:
 			try:
 				raw = [x.strip() for x in ARG.redis_manage.split(",") if x.strip() != ""]
@@ -279,15 +297,16 @@ def main(argv=None):
 				return -1
 			managedList = sorted(set(managedList))
 			available_ids = {d["id"] for d in managed_platform["devices"]}
-			out_of_range = [i for i in managedList if i not in available_ids]
+			valid_ids = set(platform_device_ids)
+			out_of_range = [i for i in managedList if i not in valid_ids]
 			if out_of_range:
-				print("Some GPU IDs are not present on platform %d: %s" % (managed_platform_id, ",".join(map(str, out_of_range))))
+				print("Some GPU IDs %s are not present on the platform with ID %d. Valid IDs: %s" % (",".join(str(i) for i in out_of_range), managed_platform_id, ",".join(str(i) for i in valid_ids)))
 				return -1
 		elif ARG.redis_manage_count is not None:
 			if ARG.redis_manage_count <= 0 or ARG.redis_manage_count > GPUcount:
 				print("Can not manage more GPUs than available or less than 1 but you requested %d out of %d possible!"%(ARG.redis_manage_count, GPUcount))
 				return -1
-			managedList = list(range(GPUcount - 1, GPUcount - 1 - ARG.redis_manage_count, -1)) # List of last N GPUs to be managed, e.g. GPUcount=8, ARG.redis_manage_count=3 -> managedList=[7,6,5]
+			managedList = list(reversed(platform_device_ids))[:ARG.redis_manage_count]
 		try:
 			status = initRedisObjects(rs, ARG.redis_prefix, managedList, GPUcount, managed_platform, force=ARG.force)
 			if status == -1: # Objects already initialized, add force to proceed, exit successfully.
