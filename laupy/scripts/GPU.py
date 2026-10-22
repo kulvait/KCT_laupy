@@ -111,6 +111,17 @@ def getOpenCLPlatforms():
 		raise DiscoveryError("clinfo -l reported no OpenCL platforms.")
 	return platforms
 
+def getDefaultPlatformID():
+	platforms = getOpenCLPlatforms()
+	admissible_platforms = [p for p in platforms if "cuda" in p["name"].lower()]
+	if not admissible_platforms:
+		admissible_platforms = [p for p in platforms if len(p["devices"]) > 0]
+	admissible_platforms.sort(key=lambda p: len(p["devices"]), reverse=True)
+	if admissible_platforms and len(admissible_platforms[0]["devices"]) > 0:
+		return admissible_platforms[0]["id"]
+	else:
+		raise DiscoveryError("No OpenCL platforms with devices found.")
+
 def checkPID(PID):
 	try:
 		os.kill(PID, 0)
@@ -158,10 +169,21 @@ def getManagedPlatformID(rs, prefix):
 		)
 	return int(value)
 
+def getPlatformByID(platforms, platform_id):
+	for platform in platforms:
+		if platform["id"] == platform_id:
+			return platform
+	raise DiscoveryError(f"No OpenCL platform with ID {platform_id} found.")
+
+def getPlatformDeviceIDs(platform):
+	device_ids = [d["id"] for d in platform["devices"]]
+	device_ids = sorted(set(device_ids))  # Ensure unique and sorted device IDs
+	return device_ids
+
 def getManagedPlatformDeviceIDs(rs, prefix):
 	managed_platform_id = getManagedPlatformID(rs, prefix)
 	managed_platform = getPlatformByID(getOpenCLPlatforms(), managed_platform_id)
-	device_ids = sorted([d["id"] for d in managed_platform["devices"]])
+	device_ids = getPlatformDeviceIDs(managed_platform)
 	if not device_ids:
 		raise DiscoveryError(f"Managed platform {managed_platform_id} has no devices.")
 	expected = list(range(device_ids[0], device_ids[0] + len(device_ids)))
@@ -203,8 +225,8 @@ def getGPUCount(rs, prefix):
 def insertGPU(rs, prefix, GPUID):
 	valid_ids = set(getManagedPlatformDeviceIDs(rs, prefix))
 	if GPUID not in valid_ids:
-		print("GPU ID %d is not present on managed platform. Valid IDs: %s"  % (GPUID, ",".join(str(i) for i in sorted(valid_ids))))
-		 return 1
+		print("GPU ID %d is not present on managed platform. Valid IDs: %s"  % (GPUID, ",".join(str(i) for i in sorted(valid_ids))), file=sys.stderr)
+		return 1
 	managed = getManagedGPUs(rs, prefix)
 	if GPUID in managed:
 		print("GPU %d is already managed."%(GPUID))
@@ -216,7 +238,6 @@ def insertGPU(rs, prefix, GPUID):
 		rs.lpush("%s_IDLE"%(prefix), GPUID)
 		print(msg)
 		return 0
-
 
 def removeGPU(rs, prefix, GPUID):
 	managed = getManagedGPUs(rs, prefix)
@@ -232,23 +253,15 @@ def removeGPU(rs, prefix, GPUID):
 		return 0
 
 
-def getDefaultPlatformID():
-	platforms = getOpenCLPlatforms()
-	admissible_platforms = [p for p in platforms if "cuda" in p["name"].lower()]
-	if not admissible_platforms:
-		admissible_platforms = [p for p in platforms if len(p["devices"]) > 0]
-	admissible_platforms.sort(key=lambda p: len(p["devices"]), reverse=True)
-	if admissible_platforms and len(admissible_platforms[0]["devices"]) > 0:
-		return admissible_platforms[0]["id"]
-	else:
-		raise DiscoveryError("No OpenCL platforms with devices found.")
-
-def main(argv=None):
+def main_with_discovery(argv=None):
+	# Parsing and validation
 	parser = buildParser()
 	ARG = parser.parse_args(argv)
 	if ARG.managed_platform_id is not None:
-		if not (ARG.redis_manage_all or ARG.redis_manage or ARG.redis_manage_count):
+		if not (ARG.redis_manage_all or ARG.redis_manage is not None or ARG.redis_manage_count is not None):
 			parser.error("--managed-platform-id can only be used with --redis-manage-all, --redis-manage or --redis-manage-count.")
+	if ARG.redis_manage_count is not None and ARG.redis_manage_count <= 0:
+		parser.error("--redis-manage-count must be a positive integer.")
 	
 	if ARG.platform_list:
 		platforms = getOpenCLPlatforms()
@@ -278,17 +291,13 @@ def main(argv=None):
 	if ARG.redis_manage_all or ARG.redis_manage is not None or ARG.redis_manage_count is not None:
 		platforms = getOpenCLPlatforms()
 		managed_platform_id = ARG.managed_platform_id if ARG.managed_platform_id is not None else getDefaultPlatformID()
-		managed_platform = next((p for p in platforms if p["id"] == managed_platform_id), None)
-		if managed_platform is None or len(managed_platform["devices"]) <= 0:
-			print(f"Error: No OpenCL platform with ID {managed_platform_id} found or it has no devices.")
-			return -1
-		platform_device_ids = sorted([d["id"] for d in managed_platform["devices"]])
-		platform_device_ids = sorted(set(platform_device_ids))  # Ensure unique and sorted device IDs
+		managed_platform = getPlatformByID(platforms, managed_platform_id)
+		platform_device_ids = getPlatformDeviceIDs(managed_platform)
 		GPUcount = len(platform_device_ids)
 		managedList = []
 		if ARG.redis_manage_all:
 			managedList = platform_device_ids[:]
-		elif ARG.redis_manage:
+		elif ARG.redis_manage is not None:
 			try:
 				raw = [x.strip() for x in ARG.redis_manage.split(",") if x.strip() != ""]
 				managedList = [int(i) for i in raw]
@@ -296,11 +305,13 @@ def main(argv=None):
 				print("Invalid --redis-manage list. Use comma-separated integers, e.g. 0,1,3")
 				return -1
 			managedList = sorted(set(managedList))
-			available_ids = {d["id"] for d in managed_platform["devices"]}
+			if len(managedList) == 0:
+				print("No valid GPU IDs provided in --redis-manage list.")
+				return -1
 			valid_ids = set(platform_device_ids)
 			out_of_range = [i for i in managedList if i not in valid_ids]
 			if out_of_range:
-				print("Some GPU IDs %s are not present on the platform with ID %d. Valid IDs: %s" % (",".join(str(i) for i in out_of_range), managed_platform_id, ",".join(str(i) for i in valid_ids)))
+				print(f"GPU IDs {out_of_range} are not present on managed platform {managed_platform_id}. Valid IDs: {platform_device_ids}", file=sys.stderr)
 				return -1
 		elif ARG.redis_manage_count is not None:
 			if ARG.redis_manage_count <= 0 or ARG.redis_manage_count > GPUcount:
@@ -321,7 +332,6 @@ def main(argv=None):
 	if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)) and ARG.platform_list is False and ARG.default_platform_id is False:
 		print("Not managing any platform, set Redis objects first by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.")
 		try:
-			default_platform_id = getDefaultPlatformID()
 			platforms = getOpenCLPlatforms()
 			if all(p["devices"] == [] for p in platforms):
 				print("Redis not initialized, no OpenCL platforms with devices found.")
@@ -495,6 +505,13 @@ def main(argv=None):
 				print("GPU %d acquired by unknown process."%(i))
 		return 0
 	return 0
+
+def main(argv=None):
+	try:
+		return main_with_discovery(argv)
+	except DiscoveryError as e:
+		print(f"Error: {e}")
+		return -1
 
 if __name__ == "__main__":
 	sys.exit(main())
