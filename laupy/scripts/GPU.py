@@ -5,16 +5,14 @@
 #License: GPL-3.0
 
 import argparse
+import subprocess
 import datetime
 import os
+import re
 import sys
 
-import pycuda
 import redis
 from termcolor import colored
-from pycuda import compiler
-import pycuda.driver as drv
-import pyopencl as cl
 
 def buildParser():
 	parser = argparse.ArgumentParser(description="GPU management through Redis server")
@@ -25,11 +23,11 @@ def buildParser():
 	parser.add_argument("--redis-prefix", type=str, default="GPU", help="Prefix of Redis objects to be used for GPU management")
 	parser.add_argument("--pid", type=int, default=None, help="Use this PID to identify PID for --get and --release instead of parent PID.")
 	parser.add_argument("--force", action="store_true", help="Initialize Redis objects even if they are already initialized.")
+	parser.add_argument("--managed-platform-id", type=int, help="Specify the OpenCL platform ID to be managed. If not specified, the default platform will be used. Use only with --redis-manage-all, --redis-manage or --redis-manage-count.")
 	action = parser.add_mutually_exclusive_group()
 	#System information
-	action.add_argument("--gpu-count", action="store_true", help="Get number of GPUs in the system as returned by pycuda.driver.Device.count()")
-	action.add_argument("--platform-id", action="store_true", help="Print Platform ID with CUDA GPUs.")
 	action.add_argument("--platform-list", action="store_true", help="List all OpenCL platforms and devices.")
+	action.add_argument("--default-platform-id", action="store_true", help="Suggest the CUDA OpenCL platform with the most devices, and print its ID.")
 	#Redis management
 	action.add_argument("--redis-manage-all", action="store_true", help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with all available GPU.")
 	action.add_argument("--redis-manage", type=str, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with specified GPUs provided as comma separated list.")
@@ -47,7 +45,71 @@ def buildParser():
 	action.add_argument("--info", action="store_true", help="Print GPUs summary.")
 	action.add_argument("--idle", action="store_true", help="Print idle GPUs.")
 	action.add_argument("--active", action="store_true", help="Print active GPUs.")
+	action.add_argument("--platform-id", action="store_true", help="Print Platform ID that is managed by the Redis server.")
+	action.add_argument("--gpu-count", action="store_true", help="Get number of devices on managed platform.")
 	return parser
+
+class DiscoveryError(RuntimeError):
+	pass
+
+def getOpenCLPlatforms():
+	env = os.environ.copy()
+	env["LC_ALL"] = "C"
+	try:
+		result = subprocess.run(
+			["clinfo", "-l"],
+			capture_output=True,
+			text=True,
+			encoding="utf-8",
+			errors="replace",
+			timeout=30,
+			check=True,
+			env=env,
+		)
+	except FileNotFoundError as exc:
+		raise DiscoveryError(
+			"clinfo was not found; install it and ensure it is on PATH."
+		) from exc
+	except subprocess.TimeoutExpired as exc:
+		raise DiscoveryError("clinfo -l timed out after 30 seconds.") from exc
+	except subprocess.CalledProcessError as exc:
+		detail = (exc.stderr or exc.stdout or "").strip()
+		raise DiscoveryError(
+			f"clinfo -l failed with exit code {exc.returncode}: {detail}"
+		) from exc
+	except OSError as exc:
+		raise DiscoveryError(f"Could not execute clinfo: {exc}") from exc
+	platforms = []
+	current = None
+	for line in result.stdout.splitlines():
+		if not line.strip():
+			continue
+		platform_match = re.fullmatch(
+			r"\s*Platform #(\d+):\s*(.+?)\s*", line
+		)
+		if platform_match:
+			current = {
+				"id": int(platform_match.group(1)),
+				"name": platform_match.group(2),
+				"devices": [],
+			}
+			platforms.append(current)
+			continue
+		device_match = re.fullmatch(
+			r"\s*[+`|\\─├└│ -]*Device #(\d+):\s*(.+?)\s*", line
+		)
+		if device_match and current is not None:
+			current["devices"].append({
+				"id": int(device_match.group(1)),
+				"name": device_match.group(2),
+			})
+			continue
+		raise DiscoveryError(
+			f"Unrecognized clinfo -l output: {line!r}"
+		)
+	if not platforms:
+		raise DiscoveryError("clinfo -l reported no OpenCL platforms.")
+	return platforms
 
 def checkPID(PID):
 	try:
@@ -57,7 +119,7 @@ def checkPID(PID):
 	else:
 		return True
 
-def initRedisObjects(rs, prefix, managedList, GPUcount, force=False):
+def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=False):
 	lastinit_data = rs.hgetall("%s_INIT"%(prefix))
 	if len(lastinit_data.keys()) == 0 or force:
 		rs.delete("%s_IDLE"%(prefix))
@@ -70,21 +132,32 @@ def initRedisObjects(rs, prefix, managedList, GPUcount, force=False):
 		rs.hset("%s_INIT"%(prefix), "TIME", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 		rs.hset("%s_INIT"%(prefix), "GPUMANAGED", ",".join([str(i) for i in managedList]))
 		rs.hset("%s_INIT"%(prefix), "GPUCOUNT", GPUcount)
-		rs.lpush("%s_EVENTS"%(prefix), "%s: Redis initialized, %d managed GPUs."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), len(managedList)))
+		storePlatform(rs, prefix, managedPlatform)
+		rs.lpush("%s_EVENTS"%(prefix), "%s: Redis initialized, %d managed GPUs, platform ID %d."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), len(managedList), managedPlatform["id"]))
 		return 0
 	else:
 		print("Objects already initialized, add force to proceed.")
 		return -1
 
+def storePlatform(rs, prefix, platform):
+	rs.hset(
+		f"{prefix}_PLATFORM",
+		mapping={
+			"ID": platform["id"],
+			"NAME": platform["name"],
+			"DEVICECOUNT": len(platform["devices"]),
+		},
+	)
+
 def getManagedGPUs(rs, prefix):
 	managed = rs.lrange("%s_MANAGED"%(prefix), 0, -1)
-	managedlist = [int(i.decode()) for i in managed]
+	managedlist = [int(i) for i in managed]
 	managedlist.sort()
 	return managedlist
 
 def getIDLEGPUs(rs, prefix):
 	idle = rs.lrange("%s_IDLE"%(prefix), 0, -1)
-	idlelist = [int(i.decode()) for i in idle]
+	idlelist = [int(i) for i in idle]
 	idlelist.sort()
 	return idlelist
 
@@ -95,9 +168,14 @@ def getActiveGPUs(rs, prefix):
 	active.sort()
 	return active
 
-def getGPUCount():
-	drv.init()
-	return drv.Device.count()
+def getGPUCount(rs, prefix):
+	platform_data = rs.hgetall(f"{prefix}_PLATFORM")
+	if not platform_data:
+		raise DiscoveryError(
+			"No managed platform is stored. Initialize the pool first, "
+			"or use --default-platform-id for a suggestion."
+		)
+	return int(platform_data.get("DEVICECOUNT", 0))
 
 def insertGPU(rs, prefix, GPUID):
 	GPUCOUNT = getGPUCount()
@@ -129,37 +207,52 @@ def removeGPU(rs, prefix, GPUID):
 		print(msg)
 		return 0
 
+def getManagedPlatformID(rs, prefix):
+	value = rs.hget(f"{prefix}_PLATFORM", "ID")
+	if value is None:
+		raise DiscoveryError(
+			"No managed platform is stored. Initialize the pool first, "
+			"or use --default-platform-id for a suggestion."
+		)
+	return int(value)
+
+def getDefaultPlatformID():
+	platforms = getOpenCLPlatforms()
+	admissible_platforms = [p for p in platforms if "cuda" in p["name"].lower()]
+	if not admissible_platforms:
+		admissible_platforms = [p for p in platforms if len(p["devices"]) > 0]
+	admissible_platforms.sort(key=lambda p: len(p["devices"]), reverse=True)
+	if admissible_platforms and len(admissible_platforms[0]["devices"]) > 0:
+		return admissible_platforms[0]["id"]
+	else:
+		raise DiscoveryError("No OpenCL platforms with devices found.")
+
 def main(argv=None):
 	parser = buildParser()
 	ARG = parser.parse_args(argv)
-	if ARG.gpu_count:
-		drv.init()
-		GPUcount = drv.Device.count()
-		print(GPUcount)
-		return 0
+	if ARG.managed_platform_id is not None:
+		if not (ARG.redis_manage_all or ARG.redis_manage or ARG.redis_manage_count):
+			print("Error: --managed-platform-id can only be used with --redis-manage-all, --redis-manage or --redis-manage-count.")
+			return -1
 	
 	if ARG.platform_list:
-		platforms = cl.get_platforms()
-		for ID, platform in enumerate(platforms):
-			print(f"Platform {ID}: {platform.name} (Vendor: {platform.vendor}, Version: {platform.version}), Devices: {len(platform.get_devices())}")
-			for device in platform.get_devices():
-				print(f"  Device: {device.name} (Type: {cl.device_type.to_string(device.type)}, Max Compute Units: {device.max_compute_units}, Global Memory Size: {device.global_mem_size / (1024**2)} MB)")
+		platforms = getOpenCLPlatforms()
+		for platform in platforms:
+			print(f"Platform ID: {platform['id']}, Name: {platform['name']}")
+			for device in platform["devices"]:
+				print(f"  Device ID: {device['id']}, Name: {device['name']}")
 		return 0
 	
-	if ARG.platform_id:
-		cuda_devices = []
-		drv.init()
-		for i in range(drv.Device.count()):
-			device = drv.Device(i)
-			cuda_devices.append(device.name())
-	# List all OpenCL platforms and devices
-		platforms = cl.get_platforms()
-		for ID, platform in enumerate(platforms):
-			for device in platform.get_devices():
-				print(ID)
-				return 0
-		print("Platform not found")
-		return -1
+	if ARG.default_platform_id:
+		try:
+			default_platform_id = getDefaultPlatformID()
+			print(f"{default_platform_id}")
+			return 0
+		except DiscoveryError as e:
+			print(f"Error: {e}")
+			return -1
+	
+
 	
 	rs = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=10, socket_timeout=None, decode_responses=True) #GPU acquisition might wait for a long time, so we set socket_timeout to None to avoid timeout errors
 	try:
@@ -168,14 +261,15 @@ def main(argv=None):
 		print("Can not connect to Redis server, try to start server first.")
 		return -1
 	
-	if ARG.managed_gpu_count:
-		devCount = len(rs.lrange("%s_MANAGED"%(ARG.redis_prefix), 0, -1))
-		print(devCount)
-		return 0
-	
+	# Redis management setup --redis-manage-all, --redis-manage or --redis-manage-count
 	if ARG.redis_manage_all or ARG.redis_manage or ARG.redis_manage_count:
-		drv.init()
-		GPUcount = drv.Device.count()
+		platforms = getOpenCLPlatforms()
+		managed_platform_id = ARG.managed_platform_id if ARG.managed_platform_id is not None else getDefaultPlatformID()
+		managed_platform = next((p for p in platforms if p["id"] == managed_platform_id), None)
+		if managed_platform is None or len(managed_platform["devices"]) <= 0:
+			print(f"Error: No OpenCL platform with ID {managed_platform_id} found or it has no devices.")
+			return -1
+		GPUcount = len(managed_platform["devices"])
 		managedList = []
 		if ARG.redis_manage_all:
 			managedList = list(range(GPUcount))
@@ -185,30 +279,68 @@ def main(argv=None):
 				managedList = [int(i) for i in raw]
 			except ValueError:
 				print("Invalid --redis-manage list. Use comma-separated integers, e.g. 0,1,3")
-				exit(-1)
+				return -1
 			managedList = sorted(set(managedList))
 			out_of_range = [i for i in managedList if i < 0 or i >= GPUcount]
 			if out_of_range:
 				print("Some GPU IDs are out of range [0..%d]: %s" % (GPUcount - 1, ",".join(map(str, out_of_range))))
-				exit(-1)
+				return -1
 		elif ARG.redis_manage_count is not None:
 			if ARG.redis_manage_count <= 0 or ARG.redis_manage_count > GPUcount:
 				print("Can not manage more GPUs than available or less than 1 but you requested %d out of %d possible!"%(ARG.redis_manage_count, GPUcount))
 				return -1
-			managedList = list(ranege(GPUcount - 1, GPUcount - 1 - ARG.redis_manage_count, -1)) # List of last N GPUs to be managed, e.g. GPUcount=8, ARG.redis_manage_count=3 -> managedList=[7,6,5]
-		status = initRedisObjects(rs, ARG.redis_prefix, managedList, GPUcount, ARG.force)
-		if status == -1:
-			return 0
-		else:
-			print(len(managedList))
-			return 0
+			managedList = list(range(GPUcount - 1, GPUcount - 1 - ARG.redis_manage_count, -1)) # List of last N GPUs to be managed, e.g. GPUcount=8, ARG.redis_manage_count=3 -> managedList=[7,6,5]
+		try:
+			status = initRedisObjects(rs, ARG.redis_prefix, managedList, GPUcount, managed_platform, force=ARG.force)
+			if status == -1: # Objects already initialized, add force to proceed, exit successfully.
+				return 0
+			else:
+				print(len(managedList))
+				return 0
+		except Exception as e:
+			print(f"Error: {e}")
+			return -1
 	
 	if ARG.redis_managed_insert is not None:
 		return insertGPU(rs, ARG.redis_prefix, ARG.redis_managed_insert)
 	
 	if ARG.redis_managed_delete is not None:
 		return removeGPU(rs, ARG.redis_prefix, ARG.redis_managed_delete)
-	
+
+	#GPU count on managed platform
+	if ARG.platform_id:
+		# Does the object "%s_PLATFORM"%(ARG.redis_prefix) exist in Redis?
+		if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)):
+			print("Not managing any platform, set Redis objects fist by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.")
+			return -1
+		# Read the managed platform ID from Redis
+		try:
+			platform_id = getManagedPlatformID(rs, ARG.redis_prefix)
+			print(platform_id)
+			return 0
+		except DiscoveryError as e:
+			print(f"Error: {e}")
+			return -1
+
+	if ARG.gpu_count:
+		# Does the object "%s_PLATFORM"%(ARG.redis_prefix) exist in Redis?
+		if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)):
+			print("Not managing any platform, set Redis objects fist by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.")
+			return -1
+		# Read the managed platform ID from Redis
+		try:
+			gpu_count = getGPUCount(rs, ARG.redis_prefix)
+			print(gpu_count)
+			return 0
+		except DiscoveryError as e:
+			print(f"Error: {e}")
+			return -1
+
+	if ARG.managed_gpu_count:
+		devCount = len(rs.lrange("%s_MANAGED"%(ARG.redis_prefix), 0, -1))
+		print(devCount)
+		return 0
+
 	if ARG.get:
 		if ARG.pid is not None:
 			PID = ARG.pid
@@ -218,8 +350,8 @@ def main(argv=None):
 		while True:
 			if GPUID is not None:
 				ID = int(GPUID[1])
-				mangedList = getManagedGPUs(rs, ARG.redis_prefix)
-				if ID in mangedList:
+				managedList = getManagedGPUs(rs, ARG.redis_prefix)
+				if ID in managedList:
 					LOG = "%s: GPU %s acquired by PID %d."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ID, PID)
 					rs.lpush("%s_EVENTS"%(ARG.redis_prefix), LOG)
 					rs.hset("%s_GPU%d"%(ARG.redis_prefix, int(ID)), "PID", PID)
@@ -259,8 +391,8 @@ def main(argv=None):
 		return 0
 	
 	if ARG.idle:
-		iddlelist = getIDLEGPUs(rs, ARG.redis_prefix)
-		print("There is %d IDDLE GPUs, IDs: %s"%(len(iddlelist), ",".join([str(x) for x in iddlelist])))
+		idleList = getIDLEGPUs(rs, ARG.redis_prefix)
+		print("There is %d IDLE GPUs, IDs: %s"%(len(idleList), ",".join([str(x) for x in idleList])))
 		return 0
 	
 	if ARG.managed:
@@ -280,14 +412,17 @@ def main(argv=None):
 		return 0
 	
 	if ARG.redis_delete:
+		managed = rs.lrange("%s_MANAGED"%(ARG.redis_prefix), 0, -1)
+		if len(managed) > 0:
+			print("Redis objects related to %d GPUs management will be deleted."%(len(managed)))
+		managedList = [i for i in managed]
+		for i in managedList:
+			rs.delete("%s_GPU%d"%(ARG.redis_prefix, int(i)))
 		rs.delete("%s_IDLE"%(ARG.redis_prefix))
 		rs.delete("%s_MANAGED"%(ARG.redis_prefix))
 		rs.delete("%s_EVENTS"%(ARG.redis_prefix))
 		rs.delete("%s_INIT"%(ARG.redis_prefix))
-		managed = rs.lrange("%s_MANAGED"%(ARG.redis_prefix), 0, -1)
-		managedlist = [i for i in managed]
-		for i in managedlist:
-			rs.delete("%s_GPU%d"%(ARG.redis_prefix, int(i)))
+		rs.delete("%s_PLATFORM"%(ARG.redis_prefix))
 		print("All Redis objects related to GPU management were deleted.")
 		return 0
 	
