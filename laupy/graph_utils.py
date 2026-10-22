@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 
-# Minimal directed graph implementation and utilities.
-# Year: 2026
-# License: GNU GPL3
+"""
+Small directed graph implementation and utilities.
+
+Year: 2026
+License: GNU GPL3
+"""
 
 from collections import deque
 from typing import Dict, Iterable, Iterator, List, Set, Tuple, Hashable, Optional
+from heapq import heappop, heappush
 
 Node = Hashable
 Edge = Tuple[Node, Node]
@@ -72,23 +76,6 @@ def ancestors(graph: DirectedGraph, source: Node) -> Set[Node]:
     return seen
 
 
-def topological_sort(graph: DirectedGraph) -> List[Node]:
-    """Return nodes in topological order. Raise CycleError on cycle."""
-    indegree = {n: len(graph._pred[n]) for n in graph}
-    q = deque([n for n in graph if indegree[n] == 0])
-    out: List[Node] = []
-
-    while q:
-        n = q.popleft()
-        out.append(n)
-        for child in graph.successors(n):
-            indegree[child] -= 1
-            if indegree[child] == 0:
-                q.append(child)
-
-    if len(out) != len(graph):
-        raise CycleError("Graph contains a cycle")
-    return out
 
 
 def is_directed_acyclic_graph(graph: DirectedGraph) -> bool:
@@ -132,3 +119,70 @@ def find_cycle(graph: DirectedGraph) -> List[Edge]:
                 stack.append(iter(graph.successors(nxt)))
 
     raise CycleError("No cycle found")
+
+def topological_sort_fifo(graph: DirectedGraph) -> List[Node]:
+    """Return nodes in topological order. Raise CycleError on cycle."""
+    indegree = {n: len(graph._pred[n]) for n in graph}
+    q = deque([n for n in graph if indegree[n] == 0])
+    out: List[Node] = []
+
+    while q:
+        n = q.popleft()
+        out.append(n)
+        for child in graph.successors(n):
+            indegree[child] -= 1
+            if indegree[child] == 0:
+                q.append(child)
+
+    if len(out) != len(graph):
+        raise CycleError("Graph contains a cycle")
+    return out
+
+def topological_sort(graph: DirectedGraph, tie_breaking_priority=None):
+    """
+    Return nodes in topological order.
+
+    Purpose of tie_breaking_priority:
+    ---------------------------------
+    Dependencies define only a partial order. At runtime, multiple nodes can be
+    "ready" (in-degree 0) simultaneously and are not related by dependencies.
+    In that case, this mapping lets callers pick a stable preferred order.
+
+    tie_breaking_priority:
+      dict[node] -> comparable value (commonly a tuple)
+
+    Lower value wins. Nodes not present in the mapping use default ().
+    """
+    if tie_breaking_priority is None:
+        return topological_sort_fifo(graph)
+
+    indegree = {n: sum(1 for _ in graph.predecessors(n)) for n in graph}
+    insertion_index = {n: i for i, n in enumerate(graph)}
+    heap = []
+
+    def enqueue(node):
+        # We compute priority once when node becomes ready.
+        # Heap items:
+        #   1) caller-provided priority among independent ready nodes
+        #   2) insertion_index for deterministic final tie-break
+        #   3) node identity
+        priority = tie_breaking_priority.get(node, ())
+        heappush(heap, (priority, insertion_index[node], node))
+
+    for node in graph:
+        if indegree[node] == 0:
+            enqueue(node)
+
+    result = []
+    while heap:
+        _, _, node = heappop(heap)
+        result.append(node)
+        for child in graph.successors(node):
+            indegree[child] -= 1
+            if indegree[child] == 0:
+                enqueue(child)
+
+    if len(result) != len(indegree):
+        raise CycleError("Graph contains a directed cycle")
+
+    return result
