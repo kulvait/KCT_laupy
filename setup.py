@@ -9,7 +9,7 @@ except FileNotFoundError:
 	print('version.py not found, using default version 0.0.0')
 	__version__ = '0.0.0'
 
-pkg_requires = ['termcolor', 'psutil']
+pkg_requires = ['termcolor', 'psutil', 'redis', 'pycuda', 'pyopencl']
 
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
@@ -29,6 +29,7 @@ setup(
         'submitslurm =  laupy.scripts.submitslurm:main',
         'kct-list =  laupy.scripts.kctList:main',
         'pipeline =  laupy.scripts.pipeline:main',
+        'GPU = laupy.scripts.GPU:main',
     ]
     },
     # *strongly* suggested for sharing
