@@ -31,9 +31,9 @@ def buildParser():
 	action.add_argument("--platform-id", action="store_true", help="Print Platform ID with CUDA GPUs.")
 	action.add_argument("--platform-list", action="store_true", help="List all OpenCL platforms and devices.")
 	#Redis management
-	manage.add_argument("--redis-manage-all", action="store_true", help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with all available GPU.")
-	manage.add_argument("--redis-manage", type=str, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with specified GPUs provided as comma separated list.")
-	manage.add_argument("--redis-manage-count", type=int, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with N GPUs, where N is the number of GPUs to be managed.")
+	action.add_argument("--redis-manage-all", action="store_true", help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with all available GPU.")
+	action.add_argument("--redis-manage", type=str, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with specified GPUs provided as comma separated list.")
+	action.add_argument("--redis-manage-count", type=int, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with N GPUs, where N is the number of GPUs to be managed.")
 	action.add_argument("--redis-delete", action="store_true", help="Delete all Redis objects related to GPU management.")
 	action.add_argument("--redis-purge", action="store_true", help="Remove allocations by non existent processes.")
 	action.add_argument("--redis-managed-insert", default=None, type=int, help="Insert GPU ID to managed IDs.")
