@@ -111,8 +111,9 @@ def getOpenCLPlatforms():
 		raise DiscoveryError("clinfo -l reported no OpenCL platforms.")
 	return platforms
 
-def getDefaultPlatformID():
-	platforms = getOpenCLPlatforms()
+def getDefaultPlatformID(platforms=None):
+	if platforms is None:
+		platforms = getOpenCLPlatforms()
 	admissible_platforms = [p for p in platforms if "cuda" in p["name"].lower()]
 	if not admissible_platforms:
 		admissible_platforms = [p for p in platforms if len(p["devices"]) > 0]
@@ -336,7 +337,8 @@ def main_with_discovery(argv=None):
 			if all(p["devices"] == [] for p in platforms):
 				print("Redis not initialized, no OpenCL platforms with devices found.")
 				return 0
-			default_platform = next((p for p in platforms if p["id"] == default_platform_id), None)
+			default_platform_id = getDefaultPlatformID()
+			default_platform = getPlatformByID(platforms, default_platform_id)
 			if default_platform is not None:
 				GPUcount = len(default_platform["devices"])
 				print("Redis not initialized, default platform ID %d has %d GPUs."%(default_platform_id, GPUcount))
@@ -356,10 +358,6 @@ def main_with_discovery(argv=None):
 
 	#GPU count on managed platform
 	if ARG.platform_id:
-		# Does the object "%s_PLATFORM"%(ARG.redis_prefix) exist in Redis?
-		if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)):
-			print("Not managing any platform, set Redis objects fist by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.")
-			return -1
 		# Read the managed platform ID from Redis
 		try:
 			platform_id = getManagedPlatformID(rs, ARG.redis_prefix)
@@ -370,10 +368,6 @@ def main_with_discovery(argv=None):
 			return -1
 
 	if ARG.gpu_count:
-		# Does the object "%s_PLATFORM"%(ARG.redis_prefix) exist in Redis?
-		if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)):
-			print("Not managing any platform, set Redis objects fist by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.")
-			return -1
 		# Read the managed platform ID from Redis
 		try:
 			gpu_count = getGPUCount(rs, ARG.redis_prefix)
