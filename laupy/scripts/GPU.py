@@ -24,7 +24,7 @@ def buildParser():
 	parser.add_argument("--pid", type=int, default=None, help="Use this PID to identify PID for --get and --release instead of parent PID.")
 	parser.add_argument("--force", action="store_true", help="Initialize Redis objects even if they are already initialized.")
 	parser.add_argument("--managed-platform-id", type=int, help="Specify the OpenCL platform ID to be managed. If not specified, the default platform will be used. Use only with --redis-manage-all, --redis-manage or --redis-manage-count.")
-	action = parser.add_mutually_exclusive_group()
+	action = parser.add_mutually_exclusive_group(required=True)
 	#System information
 	action.add_argument("--platform-list", action="store_true", help="List all OpenCL platforms and devices.")
 	action.add_argument("--default-platform-id", action="store_true", help="Suggest the CUDA OpenCL platform with the most devices, and print its ID.")
@@ -232,8 +232,7 @@ def main(argv=None):
 	ARG = parser.parse_args(argv)
 	if ARG.managed_platform_id is not None:
 		if not (ARG.redis_manage_all or ARG.redis_manage or ARG.redis_manage_count):
-			print("Error: --managed-platform-id can only be used with --redis-manage-all, --redis-manage or --redis-manage-count.")
-			return -1
+			parser.error("--managed-platform-id can only be used with --redis-manage-all, --redis-manage or --redis-manage-count.")
 	
 	if ARG.platform_list:
 		platforms = getOpenCLPlatforms()
@@ -279,9 +278,10 @@ def main(argv=None):
 				print("Invalid --redis-manage list. Use comma-separated integers, e.g. 0,1,3")
 				return -1
 			managedList = sorted(set(managedList))
-			out_of_range = [i for i in managedList if i < 0 or i >= GPUcount]
+			available_ids = {d["id"] for d in managed_platform["devices"]}
+			out_of_range = [i for i in managedList if i not in available_ids]
 			if out_of_range:
-				print("Some GPU IDs are out of range [0..%d]: %s" % (GPUcount - 1, ",".join(map(str, out_of_range))))
+				print("Some GPU IDs are not present on platform %d: %s" % (managed_platform_id, ",".join(map(str, out_of_range))))
 				return -1
 		elif ARG.redis_manage_count is not None:
 			if ARG.redis_manage_count <= 0 or ARG.redis_manage_count > GPUcount:
@@ -300,7 +300,7 @@ def main(argv=None):
 			return -1
 	
 	if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)) and ARG.platform_list is False and ARG.default_platform_id is False:
-		print("Not managing any platform, set Redis objects fist by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.")
+		print("Not managing any platform, set Redis objects first by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.")
 		try:
 			default_platform_id = getDefaultPlatformID()
 			platforms = getOpenCLPlatforms()
