@@ -60,6 +60,26 @@ For a local development editable upgrade from the git directory:
 pip install --user --upgrade --editable .
 ``` 
 
+## Package Structure
+
+flow.py ... core workflow orchestration logic, including DAG entries management, topological sorting, and dependency management.
+
+### DAG ordering and tie-breaking
+
+`laupy` uses an internal lightweight directed-graph implementation (no `networkx` dependency) for DAG validation, ancestor traversal, and topological sorting.
+
+Topological sorting follows dependency constraints first.  
+If multiple nodes are simultaneously ready (no direct dependency relation), `laupy` applies deterministic tie-breaking:
+
+1. earlier node timestamp first (minimum timestamp across entries of the same node),
+2. named nodes before numeric nodes on equal timestamp,
+3. first appearance order in `dag.json` as final fallback.
+
+Notes:
+- Numeric graph nodes may exist without corresponding DAG entries (graph-only nodes).
+- A node may have multiple entries (e.g., resubmissions); tie-breaking uses the earliest timestamp for node priority stability.
+- This allows non-blocking helper steps (such as `warmup`) to remain dependency-correct while being consistently ordered at the top when eligible.
+
 ## Command-Line Tools
 
 The **laupy** package installs several command‑line utilities via `console_scripts`.  
