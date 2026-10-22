@@ -283,7 +283,7 @@ def main():
         PIPELINE_DIR = os.path.join(SUBDIR_ABS, "pipeline")
         PIPELINE_LOG_DIR = os.path.join(PIPELINE_DIR, "log")
         if ARG.subcommand == "status":
-            DAG = load_dag(SUBDIR_ABS)
+            DAG = load_dag(SUBDIR_ABS, topological_sort=True)
             update_dag_entries(DAG, update_retired=ARG.show_retired, update_negative_step=False, filter_terminal_states=True)
             if len(DAG) == 0:
                 print(f"No pipeline/DAG found for {SUBDIR_REL}.")
