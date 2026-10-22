@@ -86,7 +86,23 @@ def load_dag(execution_unit_dir: str, topological_sort: bool = False) -> list:
 	if topological_sort:
 		try:
 			DAG_GRAPH = constructDAG(ENTRIES)
-			ordered_nodes = list(nx_topological_sort(DAG_GRAPH))
+			# Per-node tie-breaking data:
+			# - earliest timestamp for node (first timestamp wins across resubmits)
+			# - first appearance position in JSON for deterministic fallback
+			node_first_ts = {}
+			node_first_pos = {}
+			for pos, entry in enumerate(ENTRIES):
+				node_name = str(entry.get("dag_node_name", -1))
+				ts = entry.get("timestamp", float('inf'))
+				if node_name not in node_first_ts or ts < node_first_ts[node_name]:
+					node_first_ts[node_name] = ts
+					node_first_pos[node_name] = pos
+			# Tie-breaking priority: (earliest timestamp, is integer, first position)
+			tie_breaking_priority = {}
+			for node in DAG_GRAPH:
+				node_name = str(node)
+				tie_breaking_priority[node_name] = (node_first_ts.get(node_name, float('inf')), string_is_integer(node_name), node_first_pos.get(node_name, float('inf')))
+			ordered_nodes = list(nx_topological_sort(DAG_GRAPH, tie_breaking_priority=tie_breaking_priority))
 			dag_node_rank = {node: pos for pos, node in enumerate(ordered_nodes)}
 			def entry_sort_key(entry):
 				node_name = str(entry.get("dag_node_name", -1))
