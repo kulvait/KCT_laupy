@@ -10,9 +10,23 @@ import datetime
 import os
 import re
 import sys
+import logging
 
 import redis
 from termcolor import colored
+
+# Create a logger specific to this module
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)# Set the logging level to INFO
+# Create a console handler and set its level to INFO
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+# Create a formatter and set it for the handler
+formatter = logging.Formatter('%(asctime)s - %(name)s:%(lineno)d - %(levelname)s : %(message)s', datefmt='%d.%m.%Y %H:%M:%S')
+ch.setFormatter(formatter)
+# Add the handler to the logger
+log.addHandler(ch)
+log.propagate = False  # Prevent log messages from being propagated to the root logger
 
 def buildParser():
 	parser = argparse.ArgumentParser(description="GPU management through Redis server")
@@ -23,6 +37,8 @@ def buildParser():
 	parser.add_argument("--redis-prefix", type=str, default="GPU", help="Prefix of Redis objects to be used for GPU management")
 	parser.add_argument("--pid", type=int, default=None, help="Use this PID to identify PID for --get and --release instead of parent PID.")
 	parser.add_argument("--force", action="store_true", help="Initialize Redis objects even if they are already initialized.")
+	parser.add_argument("--try-start-server", action="store_true", help="Ensure local Redis exists, then initialize or reuse a matching GPU pool",)
+	parser.add_argument("--kill-unresponsive-server", action="store_true", help="With --try-start-server, permit verified owned Redis listener SIGKILL")
 	parser.add_argument("--managed-platform-id", type=int, help="Specify the OpenCL platform ID to be managed. If not specified, the default platform will be used. Use only with --redis-manage-all, --redis-manage or --redis-manage-count.")
 	action = parser.add_mutually_exclusive_group(required=True)
 	#System information
@@ -131,7 +147,7 @@ def checkPID(PID):
 	else:
 		return True
 
-def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=False):
+def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=False, try_start_server=False):
 	lastinit_data = rs.hgetall("%s_INIT"%(prefix))
 	if len(lastinit_data.keys()) == 0 or force:
 		rs.delete("%s_IDLE"%(prefix))
@@ -146,6 +162,23 @@ def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=F
 		rs.hset("%s_INIT"%(prefix), "GPUCOUNT", GPUcount)
 		storePlatform(rs, prefix, managedPlatform)
 		rs.lpush("%s_EVENTS"%(prefix), "%s: Redis initialized, %d managed GPUs, platform ID %d."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), len(managedList), managedPlatform["id"]))
+		return 0
+	elif try_start_server:
+		# If the server was started by this script, but INIT data already exists, return true only if GPUcount and managedList match the existing data, otherwise fail with an error.
+		existing_gpu_count = int(lastinit_data.get("GPUCOUNT", 0))
+		existing_managed = lastinit_data.get("GPUMANAGED", "")
+		existing_managed_list = [int(i) for i in existing_managed.split(",") if i.strip() != ""]
+		if existing_gpu_count != GPUcount:
+			print("Error: Existing GPU count (%d) does not match requested GPU count (%d). Use --force to reinitialize." % (existing_gpu_count, GPUcount))
+			return -1
+		if sorted(existing_managed_list) != sorted(managedList):
+			print("Error: Existing managed GPU list (%s) does not match requested managed GPU list (%s). Use --force to reinitialize." % (existing_managed_list, managedList))
+			return -1
+		if managedPlatform["id"] != int(rs.hget("%s_PLATFORM"%(prefix), "ID")):
+			print("Error: Existing managed platform ID (%d) does not match requested managed platform ID (%d). Use --force to reinitialize." % (int(rs.hget("%s_PLATFORM"%(prefix), "ID")), managedPlatform["id"]))
+			return -1
+		# If all checks pass, purge the existing data without reinitializing, since the server was just started and the data is consistent.
+		purgeNonexistentProcesses(rs, prefix)
 		return 0
 	else:
 		print("Objects already initialized, add force to proceed.")
@@ -253,6 +286,17 @@ def removeGPU(rs, prefix, GPUID):
 		print(msg)
 		return 0
 
+def purgeNonexistentProcesses(rs, prefix):
+	activeList = getActiveGPUs(rs, prefix)
+	for i in activeList:
+		PID = rs.hget("%s_GPU%d"%(prefix, int(i)), "PID")
+		if PID is not None:
+			PID = int(PID)
+			if not checkPID(PID):
+				rs.delete("%s_GPU%d"%(prefix, int(i)))
+				LOG = "%s: GPU %s acquired by process with PID %d, was released by redis purge as the process with given PID does no longer exist."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i, PID)
+				rs.lpush("%s_EVENTS"%(prefix), LOG)
+				rs.lpush("%s_IDLE"%(prefix), i)
 
 def main_with_discovery(argv=None):
 	# Parsing and validation
@@ -263,6 +307,17 @@ def main_with_discovery(argv=None):
 			parser.error("--managed-platform-id can only be used with --redis-manage-all, --redis-manage or --redis-manage-count.")
 	if ARG.redis_manage_count is not None and ARG.redis_manage_count <= 0:
 		parser.error("--redis-manage-count must be a positive integer.")
+	if ARG.kill_unresponsive_server and not ARG.try_start_server:
+		parser.error("--kill-unresponsive-server requires --try-start-server")
+	if ARG.try_start_server:
+		if not (ARG.redis_manage_all or ARG.redis_manage is not None or ARG.redis_manage_count is not None):
+			parser.error("--try-start-server requires a --redis-manage* action")
+		if ARG.redis_server not in ("localhost", "127.0.0.1"):
+			parser.error("--try-start-server requires a local loopback endpoint")
+		if ARG.force:
+			parser.error("--force cannot be combined with --try-start-server")
+		if not 1 <= ARG.redis_port <= 65535:
+			parser.error("--redis-port must be between 1 and 65535")
 	
 	if ARG.platform_list:
 		platforms = getOpenCLPlatforms()
@@ -282,11 +337,32 @@ def main_with_discovery(argv=None):
 			return -1
 	
 	rs = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=10, socket_timeout=None, decode_responses=True) #GPU acquisition might wait for a long time, so we set socket_timeout to None to avoid timeout errors
+	STARTED_SERVER = False
 	try:
-		rs.ping()
+		#Reduce timeout to 1 second for ping, if it fails, we will try to start the server
+		db = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=1, socket_timeout=1, decode_responses=True)
+		db.ping()
 	except redis.ConnectionError:
-		print("Can not connect to Redis server, try to start server first.")
-		return -1
+		log.warning("Can not connect to Redis server.")
+		if ARG.try_start_server:
+			try:
+				log.info("Trying to start Redis server...")
+				CMD = ["REDIS", "start", "--log"]
+				if ARG.kill_unresponsive_server:
+					CMD.append("--kill-unresponsive-server")
+				subprocess.run(CMD, check=True)
+				rs.ping()
+				STARTED_SERVER = True
+				log.info("Redis server started successfully.")
+			except subprocess.CalledProcessError as e:
+				log.error(f"Failed to start Redis server: {e}")
+				return -1
+			except redis.ConnectionError:
+				log.error("Redis server did not respond after starting.")
+				return -1
+		else:
+			print("Can not connect to Redis server, try to start server first.")
+			return -1
 	
 	# Redis management setup --redis-manage-all, --redis-manage or --redis-manage-count
 	if ARG.redis_manage_all or ARG.redis_manage is not None or ARG.redis_manage_count is not None:
@@ -320,7 +396,7 @@ def main_with_discovery(argv=None):
 				return -1
 			managedList = list(reversed(platform_device_ids))[:ARG.redis_manage_count]
 		try:
-			status = initRedisObjects(rs, ARG.redis_prefix, managedList, GPUcount, managed_platform, force=ARG.force)
+			status = initRedisObjects(rs, ARG.redis_prefix, managedList, GPUcount, managed_platform, force=ARG.force, try_start_server=ARG.try_start_server)
 			if status == -1: # Objects already initialized, add force to proceed, exit successfully.
 				return 0
 			else:
