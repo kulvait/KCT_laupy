@@ -30,6 +30,7 @@ setup(
         'kct-list =  laupy.scripts.kctList:main',
         'pipeline =  laupy.scripts.pipeline:main',
         'GPU = laupy.scripts.GPU:main',
+        'REDIS = laupy.scripts.REDIS:main',
     ]
     },
     # *strongly* suggested for sharing
