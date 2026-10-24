@@ -321,8 +321,16 @@ def main_with_discovery(argv=None):
 	
 	if ARG.platform_list:
 		platforms = getOpenCLPlatforms()
+		default_platform_id = None
+		try:
+			default_platform_id = getDefaultPlatformID(platforms)
+		except DiscoveryError:
+			pass
 		for platform in platforms:
-			print(f"Platform ID: {platform['id']}, Name: {platform['name']}")
+			if platform["id"] == default_platform_id:
+				print(f"Platform ID: {platform['id']}, Name: {platform['name']} - Default Platform")
+			else:
+				print(f"Platform ID: {platform['id']}, Name: {platform['name']}")
 			for device in platform["devices"]:
 				print(f"  Device ID: {device['id']}, Name: {device['name']}")
 		return 0

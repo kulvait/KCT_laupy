@@ -241,6 +241,11 @@ class RedisManager:
 			)
 		# Remove a stale PID file.
 		self.pidfile.unlink(missing_ok=True)
+		# Remove dummp.rdb if it exists, to avoid Redis loading an old state.
+		dump_file = Path("dump.rdb")
+		if dump_file.exists():
+			print(f"Removing existing dump file: {dump_file}")
+			dump_file.unlink()
 		cmd = [
 			self.ARG.redis_server,
 			"--bind", self.host,
