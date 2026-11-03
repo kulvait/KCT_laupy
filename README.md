@@ -48,10 +48,10 @@ To update the package, use
 pip install --upgrade git+https://github.com/kulvait/KCT_laupy.git
 ```
 
-For a local upgrade from the git directory:
+For a reinstall without dependencies
 
 ```bash
-pip install --user --upgrade .
+pip install --no-cache-dir --force-reinstall --no-deps git+https://github.com/kulvait/KCT_laupy.git
 ```
 
 For a local development editable upgrade from the git directory:

@@ -9,7 +9,7 @@ except FileNotFoundError:
 	print('version.py not found, using default version 0.0.0')
 	__version__ = '0.0.0'
 
-pkg_requires = ['termcolor', 'psutil', 'redis', 'pycuda', 'pyopencl']
+pkg_requires = ['termcolor', 'psutil', 'redis']
 
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
