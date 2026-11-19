@@ -343,17 +343,24 @@ def constructDAG(PIPELINE_ENTRIES: list) -> nx_DiGraph:
 def resubmit_slurm_job(PIPELINE_ENTRIES: list, entry_id: Union[str, int, Dict], env=None):
 	"""Schedule the given entry again (cancelling its job if still active) and retire it.
 
-	entry_id: the entry dict, its slurm_id (int) or its job_id (str).
+	entry_id: the entry dict, its slurm_id (int, or str of digits) or its job_id (str).
 	Returns the new entry; the caller appends it to PIPELINE_ENTRIES and saves them.
+	Returns None (after logging the reason) if the entry is not found or resubmission fails.
 	"""
+	if isinstance(entry_id, dict):
+		# Use the entry inside PIPELINE_ENTRIES (the dict passed may be a copy, e.g. from a UI)
+		ENTRY = next((entry for entry in PIPELINE_ENTRIES if entry.get("job_id") == entry_id.get("job_id")), entry_id)
+	elif isinstance(entry_id, (int, str)):
+		wanted = str(entry_id)
+		ENTRY = next((entry for entry in PIPELINE_ENTRIES
+		              if str(entry.get("job_id")) == wanted or str(entry.get("slurm_id")) == wanted), None)
+	else:
+		log.error(f"Cannot resubmit: entry_id must be an entry dict, a SLURM ID or a job_id, got {type(entry_id).__name__}")
+		return None
+	if ENTRY is None:
+		log.error(f"Cannot resubmit: no pipeline entry with job_id or SLURM ID {entry_id}")
+		return None
 	try:
-		if isinstance(entry_id, dict):
-			# Use the entry inside PIPELINE_ENTRIES (the dict passed may be a copy, e.g. from a UI)
-			ENTRY = next((entry for entry in PIPELINE_ENTRIES if entry.get("job_id") == entry_id.get("job_id")), entry_id)
-		elif isinstance(entry_id, int):
-			ENTRY = next((entry for entry in PIPELINE_ENTRIES if entry.get("slurm_id") == entry_id), None)
-		elif isinstance(entry_id, str):
-			ENTRY = next((entry for entry in PIPELINE_ENTRIES if str(entry.get("job_id")) == entry_id), None)
 		# First cancel and retire the existing job if it has a valid SLURM ID
 		if "slurm_id" in ENTRY and ENTRY["slurm_id"] is not None:
 			slurm_info = ENTRY.get("slurm_info", {})
@@ -381,7 +388,7 @@ def resubmit_slurm_job(PIPELINE_ENTRIES: list, entry_id: Union[str, int, Dict], 
 			ENTRY["retired_by"] = NEW_ENTRY["job_id"]
 		return NEW_ENTRY
 	except Exception as e:
-		log.error(f"Error resubmitting SLURM job for node '{ENTRY['dag_node_name']}': {e}")
+		log.error(f"Error resubmitting SLURM job for node '{ENTRY.get('dag_node_name', '?')}': {e}")
 		return None
 
 class SchedulingError(RuntimeError):

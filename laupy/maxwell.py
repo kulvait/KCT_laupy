@@ -247,14 +247,16 @@ def get_live_nodes(partition = None, idle_only = False):
 	sinfo_cmd = ["sinfo"]
 	partitions = []
 	if partition is not None:
-		partitions = []
+		# "allcpu,allgpu" or ["allcpu", "allgpu"]
 		if isinstance(partition, str):
-			partitions = [p.strip() for p in partition.split(',')]
-		elif not isinstance(partition, (list, tuple, set)):
-			partitions = list(partition)
+			partitions = partition.split(',')
+		elif isinstance(partition, (list, tuple, set)):
+			partitions = [str(p) for p in partition]
 		else:
 			raise ValueError(f"Invalid partition type: {type(partition)}")
-		sinfo_cmd = ["sinfo", "-p", ",".join(partitions)]
+		partitions = [p.strip() for p in partitions if p.strip()]
+		if partitions:
+			sinfo_cmd = ["sinfo", "-p", ",".join(partitions)]
 	sinfo_output = run_command(sinfo_cmd)
 	nodes = []
 	for line in sinfo_output.splitlines()[1:]:	# Skip header
