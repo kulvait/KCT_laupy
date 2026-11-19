@@ -196,7 +196,7 @@ class PipelineEntriesStore:
         """Refresh slurm_info of entries from all (or the given) subdirs with one batched query.
 
         Which entries are queried: select(subdir, PIPELINE_ENTRIES) if given, otherwise
-        laupy.flow.entries_to_refresh(PIPELINE_ENTRIES, **selection), e.g.
+        laupy.flow.pipeline_entries_to_refresh(PIPELINE_ENTRIES, **selection), e.g.
         update_retired=True, filter_terminal_states=False,
         limit_to_ancestors_including_node="3". Returns the number of entries queried.
         """
@@ -222,7 +222,7 @@ class PipelineEntriesStore:
         """Write changed subdirs (all or the given ones), merged with the current file. Returns saved subdirs.
 
         Entries removed from a list are not removed from the file; use
-        laupy.flow.clean_entries() to forget entries.
+        laupy.flow.clean_pipeline_entries() to forget entries.
         """
         wanted = {self._key(u) for u in subdirs} if subdirs is not None else None
         saved = []

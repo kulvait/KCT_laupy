@@ -182,8 +182,9 @@ def slurm_squeue_info(slurm_ids: Union[str, int, List[str], List[int]]) -> Union
 
 def get_active_slurmids(dependency_entries, raise_on_fail=False):
     """ 
-    Given a list of SLURM job IDs, return only the IDs that are active
-    (PENDING or RUNNING). Optionally raise an exception if any job has FAILED.
+    Given dependency entries, return the SLURM IDs of those still active
+    (ACTIVE_STATES: PENDING, RUNNING, REQUEUED, COMPLETING). Optionally raise
+    an exception if any of them has failed (FAILED_STATES).
     
     Parameters
     ----------
@@ -195,7 +196,7 @@ def get_active_slurmids(dependency_entries, raise_on_fail=False):
     Returns
     -------
     active_ids : list of int
-        Job IDs that are still active (PENDING or RUNNING).
+        Job IDs that are still active (ACTIVE_STATES).
     """
     active_ids = []
     for entry in dependency_entries:
