@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 # Utility functions
-from typing import Union, List, Dict
+from typing import Union, List, Dict, Optional
+import getpass
+import os
 import subprocess
 import logging
 import re
@@ -22,32 +24,78 @@ log.addHandler(ch)
 log.propagate = False  # Prevent log messages from being propagated to the root logger
 
 
+# Job state groups shared by the pipeline CLI and lautools-browser.
+ACTIVE_STATES = ("PENDING", "RUNNING", "REQUEUED", "COMPLETING")
+FAILED_STATES = ("FAILED", "CANCELLED", "TIMEOUT")
+# COMPLETING means the job already ended and SLURM is cleaning up; it is
+# normally transient and should be cancelled only when stuck.
+TRANSIENT_STATES = ("COMPLETING",)
+# Final states: once stored in an entry they never change, so they need not
+# be queried again. (NODE_FAIL and PREEMPTED are excluded, jobs may requeue.)
+TERMINAL_STATES = ("COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY", "BOOT_FAIL", "DEADLINE")
+
+
 def normalize_state(state: str) -> str:
     return state.split()[0].replace("+", "")
 
 
+# Batched queries: job IDs are deduplicated and sent in chunks of this size
+# (one sacct/squeue process per chunk, independent of how many entries or
+# execution units they come from).
+QUERY_CHUNK_SIZE = 500
+# Number of sacct/squeue processes started by this module, for diagnostics.
+QUERY_COUNTS = {"sacct": 0, "squeue": 0}
+_SLURM_ID_RE = re.compile(r"^\d+(_\d+)?$")  # 1234 or array task 1234_5
+_SACCT_FORMAT = "JobID,JobName,State,ExitCode,Partition,User,Elapsed,Timelimit,NNodes,NodeList,Reason,StdOut,StdErr"
+
+
+def _as_id_list(slurm_ids):
+    single = isinstance(slurm_ids, (str, int))
+    return single, ([str(slurm_ids)] if single else [str(sid) for sid in slurm_ids])
+
+
+def _query_lines(tool: str, slurm_ids: List[str], build_cmd) -> Dict[str, str]:
+    """Run ``tool`` for the valid, unique IDs in chunks; return {JobID: first output line}.
+
+    IDs that are not SLURM job IDs (e.g. legacy uuid job_ids) are not sent,
+    since a single invalid ID makes the whole sacct call fail. A failed or
+    empty chunk leaves its IDs unknown; there is no per-ID retry.
+    """
+    unique = list(dict.fromkeys(sid for sid in slurm_ids if _SLURM_ID_RE.match(sid)))
+    lines_by_id: Dict[str, str] = {}
+    for start in range(0, len(unique), QUERY_CHUNK_SIZE):
+        chunk = unique[start:start + QUERY_CHUNK_SIZE]
+        CMD = build_cmd(",".join(chunk))
+        QUERY_COUNTS[tool] += 1
+        try:
+            result = subprocess.run(CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        except Exception as e:
+            log.error(f"Error while running {CMD[0]} for {len(chunk)} job IDs: {e}")
+            continue
+        if result.returncode != 0:
+            log.error(f"{CMD[0]} failed for {len(chunk)} job IDs:\n\t{result.stderr.strip()}")
+            continue
+        for line in result.stdout.splitlines():
+            if line:
+                # sacct also prints step lines (1234.batch); keep the first, main job line
+                lines_by_id.setdefault(line.split("|", 1)[0], line)
+    return lines_by_id
+
+
 def slurm_info(slurm_ids: Union[str, int, List[str], List[int]]) -> Union[dict, List[dict]]:
-    """Get information about a job using sacct, and if that fails, use squeue."""
-    non_list_input = isinstance(slurm_ids, str) or isinstance(slurm_ids, int)
-    if non_list_input:
-        slurm_ids = [str(slurm_ids)]
-    else:
-        slurm_ids = [str(sid) for sid in slurm_ids]
+    """Get information about jobs using sacct, completed for pending/running jobs by squeue.
+
+    Both tools are called once per QUERY_CHUNK_SIZE unique IDs.
+    """
+    single, slurm_ids = _as_id_list(slurm_ids)
     info = slurm_sacct_info(slurm_ids)
-    squeue_info_slurmids = [
-        itm['JobID'] for itm in info if itm['State'] == "PENDING" or itm['State'] == "RUNNING"]
-    if len(squeue_info_slurmids) > 0:
-        squeue_info_output = slurm_squeue_info(squeue_info_slurmids)
-    else:
-        squeue_info_output = []
-    for squeue_info in squeue_info_output:
-        for i in info:
-            if i['JobID'] == squeue_info['JobID']:
-                i.update(squeue_info)
-    if non_list_input:
-        return info[0]
-    else:
-        return info
+    active_ids = [itm["JobID"] for itm in info if itm["State"] in ("PENDING", "RUNNING")]
+    if active_ids:
+        squeue_by_id = {itm["JobID"]: itm for itm in slurm_squeue_info(active_ids) if itm["State"] != "UNKNOWN"}
+        for itm in info:
+            if itm["JobID"] in squeue_by_id:
+                itm.update(squeue_by_id[itm["JobID"]])
+    return info[0] if single else info
 
 def replace_placeholders(string: str, slurm_id: str, node_list: str) -> str:
     if string is None:
@@ -64,13 +112,8 @@ def get_field(fields, idx, name, slurm_id):
         return None
 
 
-def parse_sacct_output(status_lines: list[str], slurm_id: str) -> dict:
+def _parse_sacct_line(status_line: Optional[str], slurm_id: str) -> dict:
     info = {"JobID": slurm_id}
-    status_line = None
-    for line in status_lines:
-        if line.split('|')[0] == str(slurm_id):
-            status_line = line
-            break
     if status_line is None:
         info['State'] = 'UNKNOWN'
         return info
@@ -91,68 +134,23 @@ def parse_sacct_output(status_lines: list[str], slurm_id: str) -> dict:
     return info
 
 
-def slurm_sacct_info_fallback_single(slurm_ids, return_unknown=False):
-    if return_unknown:
-        return {"JobID": slurm_ids[0], "State": "UNKNOWN"}
-    else:
-        return [slurm_sacct_info(slurm_id) for slurm_id in slurm_ids]
+def parse_sacct_output(status_lines: list[str], slurm_id: str) -> dict:
+    line = next((l for l in status_lines if l.split('|')[0] == str(slurm_id)), None)
+    return _parse_sacct_line(line, str(slurm_id))
 
 
 def slurm_sacct_info(slurm_ids: Union[str, int, List[str], List[int]]) -> Union[dict, List[dict]]:
-    """Get information about a job using sacct."""
-    non_list_input = isinstance(slurm_ids, str) or isinstance(slurm_ids, int)
-    if non_list_input:
-        slurm_ids = [str(slurm_ids)]
-    else:
-        slurm_ids = [str(sid) for sid in slurm_ids]
-    all_info = []
-    if len(slurm_ids) == 0:
-        log.warning("No job IDs provided to slurm_sacct_info.")
-        if non_list_input:
-            return {}
-        else:
-            return []
-    jobs_to_query = ",".join(slurm_ids)
-    CMD = ['sacct', '-j', jobs_to_query,
-           '--format=JobID,JobName,State,ExitCode,Partition,User,Elapsed,Timelimit,NNodes,NodeList,Reason,StdOut,StdErr',
-           '--noheader', '--parsable2']
-    try:
-        result = subprocess.run(
-            CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode != 0:
-            #Print stacktrace
-            import traceback
-            print(traceback.print_stack())
-            log.error(
-                f"Error while running %s:\n\t{result.stderr}" % (" ".join(CMD)))
-            return slurm_sacct_info_fallback_single(slurm_ids, non_list_input)
-        status_lines = [l for l in result.stdout.strip().splitlines() if l]
-        if not status_lines:
-            log.error(f"No output from %s for job IDs %s" %
-                      (" ".join(CMD), jobs_to_query))
-            return slurm_sacct_info_fallback_single(slurm_ids, non_list_input)
-        # Find the main job line (the one with the job ID without dot and step so jobid instead of jobid.0 or jobid.batch)
-        for slurm_id in slurm_ids:
-            info = parse_sacct_output(status_lines, slurm_id)
-            all_info.append(info)
-    except Exception as e:
-        log.error(f"Error while running %s:\n\t{e}" % (" ".join(CMD)))
-        all_info = []
-        for slurm_id in slurm_ids:
-            info = {"JobID": slurm_id, "State": "UNKNOWN"}
-            all_info.append(info)
-    if non_list_input:
-        return all_info[0]
-    else:
-        return all_info
+    """Get information about jobs using sacct (one call per QUERY_CHUNK_SIZE unique IDs)."""
+    single, slurm_ids = _as_id_list(slurm_ids)
+    if not slurm_ids:
+        return {} if single else []
+    lines = _query_lines("sacct", slurm_ids, lambda ids: [
+        "sacct", "-j", ids, f"--format={_SACCT_FORMAT}", "--noheader", "--parsable2"])
+    all_info = [_parse_sacct_line(lines.get(sid), sid) for sid in slurm_ids]
+    return all_info[0] if single else all_info
 
 
-def parse_squeue_output(status_lines: list[str], slurm_id: str) -> dict:
-    status_line = None
-    for line in status_lines:
-        if line.split('|')[0] == str(slurm_id):
-            status_line = line
-            break
+def _parse_squeue_line(status_line: Optional[str], slurm_id: str) -> dict:
     if status_line is None:
         return {"JobID": slurm_id, "State": "UNKNOWN"}
     fields = status_line.split('|')
@@ -165,57 +163,31 @@ def parse_squeue_output(status_lines: list[str], slurm_id: str) -> dict:
     return info
 
 
-def slurm_squeue_info_fallback_single(slurm_ids, return_unknown=False):
-    if return_unknown:
-        return {"JobID": slurm_ids[0], "State": "UNKNOWN"}
-    else:
-        return [slurm_squeue_info(slurm_id) for slurm_id in slurm_ids]
+def parse_squeue_output(status_lines: list[str], slurm_id: str) -> dict:
+    line = next((l for l in status_lines if l.split('|')[0] == str(slurm_id)), None)
+    return _parse_squeue_line(line, str(slurm_id))
 
 
 def slurm_squeue_info(slurm_ids: Union[str, int, List[str], List[int]]) -> Union[dict, List[dict]]:
-    """Get information about a job using squeue."""
-    non_list_input = isinstance(slurm_ids, str) or isinstance(slurm_ids, int)
-    if non_list_input:
-        slurm_ids = [str(slurm_ids)]
-    else:
-        slurm_ids = [str(sid) for sid in slurm_ids]
-    all_info = []
-    jobs_to_query = ",".join(slurm_ids)
-    CMD = ['squeue', '-j', jobs_to_query, '-h', '-o', "%i|%N|%T|%r|%M"]
-    try:
-        result = subprocess.run(
-            CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode != 0:
-            log.error(
-                f"Error while running %s:\n\t{result.stderr}" % (" ".join(CMD)))
-            return slurm_squeue_info_fallback_single(slurm_ids, non_list_input)
-        status_lines = [l for l in result.stdout.strip().splitlines() if l]
-        if not status_lines:
-            log.error(f"No output from %s for job IDs %s" %
-                      (" ".join(CMD), jobs_to_query))
-            return slurm_squeue_info_fallback_single(slurm_ids, non_list_input)
-        for slurm_id in slurm_ids:
-            info = parse_squeue_output(status_lines, slurm_id)
-            all_info.append(info)
-    except Exception as e:
-        log.error(f"Error while running %s:\n\t{e}" % (" ".join(CMD)))
-        all_info = []
-        for slurm_id in slurm_ids:
-            info = {"JobID": slurm_id, "State": "UNKNOWN"}
-            all_info.append(info)
-    if non_list_input:
-        return all_info[0]
-    else:
-        return all_info
+    """Get information about queued jobs using squeue (one call per QUERY_CHUNK_SIZE unique IDs).
 
-def get_active_slurmids(dependency_dag_entries, raise_on_fail=False):
+    Jobs no longer in the queue are reported as UNKNOWN.
+    """
+    single, slurm_ids = _as_id_list(slurm_ids)
+    if not slurm_ids:
+        return {} if single else []
+    lines = _query_lines("squeue", slurm_ids, lambda ids: ["squeue", "-j", ids, "-h", "-o", "%i|%N|%T|%r|%M"])
+    all_info = [_parse_squeue_line(lines.get(sid), sid) for sid in slurm_ids]
+    return all_info[0] if single else all_info
+
+def get_active_slurmids(dependency_entries, raise_on_fail=False):
     """ 
     Given a list of SLURM job IDs, return only the IDs that are active
     (PENDING or RUNNING). Optionally raise an exception if any job has FAILED.
     
     Parameters
     ----------
-    dependency_dag_entries : list of dict
+    dependency_entries : list of dict
 	    Each dict should contain at least the keys "slurm_id" and "slurm_info" (which itself is a dict containing the job's state).
     raise_on_fail : bool
         If True, raises RuntimeError if any job is in FAILED/CANCELLED state.
@@ -226,13 +198,13 @@ def get_active_slurmids(dependency_dag_entries, raise_on_fail=False):
         Job IDs that are still active (PENDING or RUNNING).
     """
     active_ids = []
-    for entry in dependency_dag_entries:
+    for entry in dependency_entries:
         slurm_id = entry["slurm_id"]
         job_name = entry.get("job_name", "UNKNOWN")
         status = entry.get("slurm_info", {}).get("State", "UNKNOWN")
-        if status in ("PENDING", "RUNNING", "REQUEUED", "COMPLETING"):
+        if status in ACTIVE_STATES:
             active_ids.append(slurm_id)
-        elif status in ("FAILED", "CANCELLED", "TIMEOUT"):
+        elif status in FAILED_STATES:
             msg = f"Dependency job {job_name}, ID={slurm_id} has failed with status {status}"
             if raise_on_fail:
                 raise RuntimeError(msg)
@@ -266,3 +238,64 @@ def run_slurm_command(SLURM_CMD: List[str], cwd: str = None, env=None) -> Union[
     except Exception as e:
         log.exception("Exception while running SLURM command or parsing its output.\n aggv: %s\n cwd: %s\n env: %s", SLURM_CMD, cwd, env)
         return None
+
+
+def scancel(slurm_ids: Union[str, int, List[str], List[int]]) -> Optional[str]:
+    """Cancel jobs with a single scancel call.
+
+    Returns None on success, otherwise the error message. On failure scancel
+    still cancels the valid IDs (e.g. when some jobs already ended), so pass a
+    single ID when the outcome per job matters.
+    """
+    if isinstance(slurm_ids, (str, int)):
+        slurm_ids = [slurm_ids]
+    slurm_ids = [str(sid) for sid in slurm_ids]
+    if not slurm_ids:
+        return None
+    try:
+        subprocess.run(["scancel", *slurm_ids], check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        return (exc.stderr or "").strip() or str(exc)
+    except OSError as exc:
+        return str(exc)
+    return None
+
+
+# squeue -o fields for list_user_jobs; Reason is the pending reason or, for
+# running jobs, the node list (%R).
+_USER_JOB_FIELDS = ("JobID", "JobName", "State", "Partition", "Elapsed", "Timelimit", "Reason", "SubmitTime", "WorkDir")
+_USER_JOB_FORMAT = "|".join(("%i", "%j", "%T", "%P", "%M", "%l", "%R", "%V", "%Z"))
+
+
+def list_user_jobs(user: Optional[str] = None) -> List[dict]:
+    """Return all queued/running jobs of ``user`` (default: current user) via squeue.
+
+    Raises subprocess.CalledProcessError / OSError when squeue fails.
+    """
+    user = user or getpass.getuser()
+    result = subprocess.run(["squeue", "-h", "-u", user, "-o", _USER_JOB_FORMAT],
+                            check=True, capture_output=True, text=True)
+    jobs = []
+    for line in result.stdout.splitlines():
+        parts = line.strip().split("|")
+        if len(parts) < len(_USER_JOB_FIELDS):
+            continue
+        # A "|" inside the job name would shift the fields; rejoin it.
+        extra = len(parts) - len(_USER_JOB_FIELDS)
+        parts = [parts[0], "|".join(parts[1:2 + extra])] + parts[2 + extra:]
+        info = dict(zip(_USER_JOB_FIELDS, parts))
+        info["State"] = normalize_state(info["State"]) if info["State"] else "UNKNOWN"
+        jobs.append(info)
+    return jobs
+
+
+def own_allocation_job_ids() -> set:
+    """IDs of the SLURM allocation the current process runs in (empty outside SLURM)."""
+    return {os.environ[var].strip() for var in ("SLURM_JOB_ID", "SLURM_JOBID") if os.environ.get(var)}
+
+
+def is_own_allocation(slurm_id: Union[str, int], own_ids: Optional[set] = None) -> bool:
+    """True if ``slurm_id`` (also an array task <id>_<task>) is the caller's own allocation."""
+    if own_ids is None:
+        own_ids = own_allocation_job_ids()
+    return str(slurm_id).split("_")[0] in own_ids

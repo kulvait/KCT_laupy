@@ -61,10 +61,14 @@ pip install --user --upgrade --editable .
 ```
 ## Design Concepts
  
-### Execution Units and Dependency Semantics
+### Execution Units, Entries and the DAG
 
-`laupy` tracks concrete **execution units** (entries), which currently correspond to SLURM jobs in the system.  
-Each entry has its own scheduler identity (`job_id`) and execution metadata.
+- **Execution unit**: one dataset directory below a working directory (e.g. `wd/17k_sample`); scripts run per execution unit.
+- **ENTRIES**: the scheduled jobs of an execution unit, stored in `<execution unit>/pipeline/dag.json`.
+  Each entry currently corresponds to one SLURM job and has its own identity (`job_id`, `slurm_id`), its last known SLURM state (`slurm_info`) and lifecycle flags (`retired`, `retired_by`, `retired_reason`).
+- **DAG**: the directed acyclic graph of logical nodes (`dag_node_name`, `dag_node_deps`) that entries are attached to.
+
+Entry lifecycle: submitted → refreshed from SLURM → finished or cancelled → retired (kept for history, ignored by scheduling).
 
 Dependencies are evaluated at two levels:
 
@@ -77,13 +81,25 @@ This preserves dependency correctness at the node level while keeping full obser
 ### Package Structure
 
 - **`flow.py`**  
-  Core workflow state and DAG persistence logic.  
+  ENTRIES persistence, SLURM refresh, DAG construction and job scheduling.  
   Important functions include:
-  - `load_dag(...)` – load DAG/workflow state from persistent representation
-  - `store_dag(...)` – store updated DAG/workflow state back to disk
+  - `load_entries(...)` / `save_entries(...)` / `clean_entries(...)` – read, atomically write and forget the ENTRIES of an execution unit
+  - `update_entries(...)` – refresh `slurm_info` of ENTRIES from SLURM
+  - `constructDAG(...)`, `schedule_slurm_job(...)`, `resubmit_slurm_job(...)`
+
+  The former names `load_dag`, `save_dag`, `clean_dag` and `update_dag_entries` remain as aliases.
+
+- **`entries.py`**  
+  Lifecycle of ENTRIES shared by the CLIs and lautools-browser: `select_entries`, `retire_entries`, `cancel_entries` and
+  `EntriesStore`, which holds the ENTRIES of many execution units, refreshes them from SLURM with one batched query and
+  saves only changed units, merged with concurrent changes on disk.
+
+- **`cli.py`**  
+  Option parsing and execution unit discovery shared by `pipeline` and `submitslurm`.
 
 - **`slurm.py`**  
   SLURM-facing execution integration layer (submission/tracking helpers used by pipeline execution units).
+  Job queries are batched: IDs are deduplicated and sent in chunks of `QUERY_CHUNK_SIZE` per `sacct`/`squeue` call.
 
 - **`graph_utils.py`**  
   Internal DAG utilities used by orchestration logic (validation/order/traversal), implemented without `networkx` to keep startup and command responsiveness fast.
@@ -171,10 +187,10 @@ In the current model, entries correspond to SLURM jobs and carry fields such as 
 
 #### What `pipeline` does
 
-- loads DAG/entry state from disk (`load_dag`)
-- refreshes entry status from SLURM (`update_dag_entries`)
-- persists state changes (`save_dag`)
-- can clean DAG bookkeeping (`clean_dag`)
+- loads the entries of all selected execution units (`EntriesStore`)
+- refreshes their status from SLURM with one batched query; entries already in a final state are not queried again
+- persists state changes and refreshed status, only for execution units that changed (`save_entries`)
+- can forget entries (`clean_entries`)
 - supports selective operations across one or more working directories
 
 #### Key behavior from implementation
@@ -186,18 +202,25 @@ In the current model, entries correspond to SLURM jobs and carry fields such as 
   - `pipeline/log/` (logs)
 - For dependency safety, active upstream jobs can be checked (pending/running/requeued/completing) before dependent work proceeds.
 
-#### Main modes
-
-- `--create`  
-  Create pipeline artifacts (ensures `pipeline/log` exists) without submitting work.
-
-- `--delete`  
-  Remove pipeline artifacts for a dataset (pipeline files and `pipeline/log`, with safe directory handling).
-
-- `--clean-dag`  
-  Clean DAG entries in `pipeline/dag.json` to resolve stale/failed dependency bookkeeping.
-
 #### Subcommands
+
+Every action is a subcommand: `pipeline <subcommand> [options]`. The common
+options (`-d`, `-w`, `--slurm-dir`, `-p`, `--dry-run`, `--verbose`) may be
+given before or after the subcommand.
+
+##### `pipeline create`
+Create the pipeline directory structure (`pipeline/log`) in each dataset without submitting work.
+Submission creates it implicitly, so this is only needed to prepare datasets in advance.
+
+##### `pipeline clean`
+Empty `pipeline/dag.json` to resolve stale/failed dependency bookkeeping.
+Job history is forgotten; log files are kept.
+
+##### `pipeline delete`
+Remove pipeline artifacts of a dataset: files in `pipeline/` and `pipeline/log`
+(other subdirectories of `pipeline/` are kept). Execution history is lost.
+
+`create`, `clean` and `delete` honour `--dry-run`, which only prints what would happen.
 
 ##### `pipeline status`
 Show status of all pipeline entries with SLURM state coloring and runtime context.
@@ -249,8 +272,7 @@ Effect:
 - `-w, --working-dir` one or more working directories (default `wd`)
 - `--slurm-dir` directory containing SLURM scripts (default `sbatch`)
 - `-p, --pattern` process only matching dataset subdirectories
-- `--pipeline-step` target specific pipeline step number
-- `--dry-run` simulate actions (where applicable)
+- `--dry-run` only print what `create`, `clean` and `delete` would do
 - `--verbose` print parsed arguments and detailed processing info
 
 #### Example commands
@@ -278,13 +300,14 @@ pipeline cancel -w wd --all
 pipeline cancel -w wd --job 12345 12346
 
 # Clean DAG metadata, logs will be preserved but no longer referenced
-pipeline --clean-dag -w wd
+pipeline clean -w wd
 
 # Initialize pipeline directory structure
-pipeline --create -w wd
+pipeline create -w wd
 
-# Remove pipeline data and logs for a dataset, execution history will be lost
-pipeline --delete -w wd
+# Preview, then remove pipeline data and logs of matching datasets; execution history will be lost
+pipeline delete -w wd -p 17k --dry-run
+pipeline delete -w wd -p 17k
 ```
 
 

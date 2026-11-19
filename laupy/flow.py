@@ -16,8 +16,9 @@ from laupy import slurm
 
 # Functions for management of pipeline
 from typing import Union, List, Dict
-from laupy.slurm import run_slurm_command, get_active_slurmids
-import subprocess
+from laupy.slurm import run_slurm_command, get_active_slurmids, TERMINAL_STATES
+from pathlib import Path
+import tempfile
 import logging
 import uuid
 import time
@@ -36,97 +37,222 @@ log.addHandler(ch)
 log.propagate = False  # Prevent log messages from being propagated to the root logger
 
 
-def update_dag_entries(DAG: list, limit_to_ancestors_including_node: str = "-1", update_retired: bool = False, update_negative_step: bool = False, filter_terminal_states: bool = True, node_dependencies: list = None) -> None:
-	"""Update DAG entries with current SLURM info for active dependencies and same step entries to evaluate skip conditions and retirement.
-	   Updates all entries with "step" < limit_to_ancestors_including_node, for negative limit_to_ancestors_including_node, updates all entries."""
-	DAG_flt = DAG
-	if not update_negative_step:
-		# Because step -2 is used for named nodes, not update_negative_step omits only entries with step -1, which are used for dangling nodes
-		DAG_flt = [ entry for entry in DAG_flt if entry["step"] != -1 ]
-	if not update_retired:
-		DAG_flt = [ entry for entry in DAG_flt if not entry.get("retired", False) ]
-	if filter_terminal_states:
-		#If entry is in terminal state and has already its slurm_info, do not query it
-		DAG_flt = [ entry for entry in DAG_flt if not ( "slurm_info" in entry and entry["slurm_info"]["State"] in ["COMPLETED", "FAILED", "CANCELLED"] ) ]
-	if limit_to_ancestors_including_node != "-1":
-		NODE = {}
-		NODE["dag_node_name"] = limit_to_ancestors_including_node
-		NODE["dag_node_deps"] = node_dependencies if node_dependencies else []
-		log.info(f"NODE[dag_node_deps] = {NODE['dag_node_deps']}")
-		GRAPH = constructDAG(DAG_flt + [NODE]) # Construct a temporary DAG including the node to get its ancestors
-		#Get all ancestors, including the limit_to_ancestors_including_node itself, to update only relevant entries
-		ancestors = nx_ancestors(GRAPH, limit_to_ancestors_including_node)
-		DAG_flt = [ entry for entry in DAG_flt if entry["dag_node_name"] in ancestors or entry["dag_node_name"] == limit_to_ancestors_including_node ]
-	#Get entries of potential dependencies and same step entries and same step and command entries to evaluate skip conditions and retirement
-	job_ids = [ entry["job_id"] for entry in DAG_flt]
-	slurm_ids = []
-	for jid in job_ids:
-		entry = next((entry for entry in DAG_flt if entry["job_id"] == jid), None)
-		if entry is not None and "slurm_id" in entry:
-			slurm_ids.append(entry["slurm_id"])
-		else:
-			slurm_ids.append(jid)  # Fallback to job_id if slurm_id is not available
-	# slurm_ids = [ entry["slurm_id"] for entry in DAG_flt] ... use after transition to slurm_id for all entries
-	if len(slurm_ids) > 0:
-		slurm_infos = slurm.slurm_info(slurm_ids)
-		for i in range(len(slurm_ids)):
-			jid = slurm_ids[i]
-			info = slurm_infos[i]
-			if info["State"] == "UNKNOWN":
-				continue
-			DAG_flt[i]["slurm_info"] = info
+# ----------------------------------------------------------------------
+# Terminology
+#
+# ENTRIES: list of entry dicts stored in <execution_unit>/pipeline/dag.json.
+#   Each entry is one scheduled SLURM job (job_id, slurm_id, slurm_info,
+#   retired, ...) attached to a DAG node by dag_node_name/dag_node_deps.
+#   Several entries may belong to the same node (resubmissions).
+# DAG: the directed acyclic graph of nodes, built from ENTRIES by constructDAG().
+# ----------------------------------------------------------------------
 
-def load_dag(execution_unit_dir: str, topological_sort: bool = False) -> list:
-	"""Load the DAG (Directed Acyclic Graph) for the execution context."""
-	dag_file = os.path.join(execution_unit_dir, "pipeline", "dag.json")
+def entries_to_refresh(ENTRIES: list, limit_to_ancestors_including_node: str = "-1", update_retired: bool = False, update_negative_step: bool = False, filter_terminal_states: bool = True, node_dependencies: list = None) -> list:
+	"""Select the entries whose SLURM info update_entries() would query.
+
+	limit_to_ancestors_including_node: only entries of that DAG node and its
+	ancestors ("-1": all entries). Ancestors are computed on the full DAG, so a
+	finished node in the middle of a chain does not hide the nodes above it.
+	update_negative_step: include entries with step -1 (submitted outside the DAG).
+	update_retired: include retired entries.
+	filter_terminal_states: skip entries whose stored state is final (TERMINAL_STATES).
+	"""
+	selected = ENTRIES
+	if limit_to_ancestors_including_node != "-1":
+		NODE = {"dag_node_name": limit_to_ancestors_including_node, "dag_node_deps": node_dependencies if node_dependencies else []}
+		GRAPH = constructDAG(ENTRIES + [NODE])  # temporary DAG including the node to get its ancestors
+		ancestors = set(nx_ancestors(GRAPH, limit_to_ancestors_including_node)) | {limit_to_ancestors_including_node}
+		selected = [entry for entry in selected if entry.get("dag_node_name") in ancestors]
+	if not update_negative_step:
+		# step -2 marks named nodes; only step -1 entries (outside the DAG) are skipped
+		selected = [entry for entry in selected if entry.get("step") != -1]
+	if not update_retired:
+		selected = [entry for entry in selected if not entry.get("retired", False)]
+	if filter_terminal_states:
+		selected = [entry for entry in selected if entry.get("slurm_info", {}).get("State") not in TERMINAL_STATES]
+	return selected
+
+
+def refresh_entries(entries: list) -> None:
+	"""Query SLURM for the given entries and store the result in their slurm_info.
+
+	The entries may come from any number of execution units: all their IDs go
+	into one batched query (see laupy.slurm.QUERY_CHUNK_SIZE). Entries SLURM no
+	longer knows keep their stored slurm_info.
+	"""
+	if not entries:
+		return
+	# Legacy entries without slurm_id fall back to job_id
+	slurm_ids = [str(entry.get("slurm_id") or entry.get("job_id")) for entry in entries]
+	for entry, info in zip(entries, slurm.slurm_info(slurm_ids)):
+		if info["State"] != "UNKNOWN":
+			entry["slurm_info"] = info
+
+
+def update_entries(ENTRIES: list, limit_to_ancestors_including_node: str = "-1", update_retired: bool = False, update_negative_step: bool = False, filter_terminal_states: bool = True, node_dependencies: list = None) -> None:
+	"""Refresh slurm_info of ENTRIES of one execution unit, see entries_to_refresh() for the selection.
+
+	To refresh many execution units with a single query use laupy.entries.EntriesStore.
+	"""
+	refresh_entries(entries_to_refresh(ENTRIES, limit_to_ancestors_including_node, update_retired, update_negative_step, filter_terminal_states, node_dependencies))
+
+
+def entries_file(execution_unit_dir: Union[str, Path]) -> str:
+	"""Path of the file storing ENTRIES of an execution unit (pipeline/dag.json)."""
+	return os.path.join(str(execution_unit_dir), "pipeline", "dag.json")
+
+
+def load_entries(execution_unit_dir: Union[str, Path], topological_sort: bool = False) -> list:
+	"""Load ENTRIES of an execution unit; [] if there are none.
+
+	topological_sort: order entries by the topological order of their DAG nodes.
+	"""
+	path = entries_file(execution_unit_dir)
 	ENTRIES = []
-	if os.path.exists(dag_file):
-		with open(dag_file) as f:
+	if os.path.exists(path):
+		with open(path) as f:
 			ENTRIES = json.load(f)
 	if topological_sort:
-		try:
-			DAG_GRAPH = constructDAG(ENTRIES)
-			# Per-node tie-breaking data:
-			# - earliest timestamp for node (first timestamp wins across resubmits)
-			# - first appearance position in JSON for deterministic fallback
-			node_first_ts = {}
-			node_first_pos = {}
-			for pos, entry in enumerate(ENTRIES):
-				node_name = str(entry.get("dag_node_name", -1))
-				ts = entry.get("timestamp", float('inf'))
-				if node_name not in node_first_ts or ts < node_first_ts[node_name]:
-					node_first_ts[node_name] = ts
-					node_first_pos[node_name] = pos
-			# Tie-breaking priority: (earliest timestamp, is integer, first position)
-			tie_breaking_priority = {}
-			for node in DAG_GRAPH:
-				node_name = str(node)
-				tie_breaking_priority[node_name] = (node_first_ts.get(node_name, float('inf')), string_is_integer(node_name), node_first_pos.get(node_name, float('inf')))
-			ordered_nodes = list(nx_topological_sort(DAG_GRAPH, tie_breaking_priority=tie_breaking_priority))
-			dag_node_rank = {node: pos for pos, node in enumerate(ordered_nodes)}
-			def entry_sort_key(entry):
-				node_name = str(entry.get("dag_node_name", -1))
-				unknown_node_rank = -1  # Assign a rank for unknown nodes ... they come first
-				rank = dag_node_rank.get(node_name, unknown_node_rank)
-				ts = entry.get("timestamp", float('inf'))  # Use a large value for missing timestamps to sort them last
-				return (rank, ts)
-			sorted_entries = sorted(ENTRIES, key=entry_sort_key)
-			ENTRIES = sorted_entries
-		except Exception as e:
-			log.error(f"Error during topological sort of DAG: {e}")
-			log.error(f"{e.__class__.__name__} on line {e.__traceback__.tb_lineno} in {__file__}")
+		ENTRIES = sort_entries_topologically(ENTRIES)
 	return ENTRIES
 
-def save_dag(execution_unit_dir: str, dag: list) -> None:
-	"""Save the DAG (Directed Acyclic Graph) for the execution context."""
-	dag_file = os.path.join(execution_unit_dir, "pipeline", "dag.json")
-	os.makedirs(os.path.dirname(dag_file), exist_ok=True)
-	with open(dag_file, "w") as f:
-		json.dump(dag, f, indent=2)
 
-def clean_dag(execution_unit_dir: str) -> None:
-	"""Clear the DAG (Directed Acyclic Graph) for the execution context by resetting it to an empty list."""
-	save_dag(execution_unit_dir, [])
+def sort_entries_topologically(ENTRIES: list) -> list:
+	"""Return ENTRIES ordered by the topological order of their DAG nodes, then by timestamp."""
+	try:
+		DAG = constructDAG(ENTRIES)
+		# Per-node tie-breaking data:
+		# - earliest timestamp for node (first timestamp wins across resubmits)
+		# - first appearance position in JSON for deterministic fallback
+		node_first_ts = {}
+		node_first_pos = {}
+		for pos, entry in enumerate(ENTRIES):
+			node_name = str(entry.get("dag_node_name", -1))
+			ts = entry.get("timestamp", float('inf'))
+			if node_name not in node_first_ts or ts < node_first_ts[node_name]:
+				node_first_ts[node_name] = ts
+				node_first_pos[node_name] = pos
+		# Tie-breaking priority: (earliest timestamp, is integer, first position)
+		tie_breaking_priority = {}
+		for node in DAG:
+			node_name = str(node)
+			tie_breaking_priority[node_name] = (node_first_ts.get(node_name, float('inf')), string_is_integer(node_name), node_first_pos.get(node_name, float('inf')))
+		ordered_nodes = list(nx_topological_sort(DAG, tie_breaking_priority=tie_breaking_priority))
+		node_rank = {node: pos for pos, node in enumerate(ordered_nodes)}
+		def entry_sort_key(entry):
+			node_name = str(entry.get("dag_node_name", -1))
+			rank = node_rank.get(node_name, -1)  # unknown nodes come first
+			ts = entry.get("timestamp", float('inf'))  # missing timestamps sort last
+			return (rank, ts)
+		return sorted(ENTRIES, key=entry_sort_key)
+	except Exception as e:
+		log.error(f"Error during topological sort of DAG: {e}")
+		log.error(f"{e.__class__.__name__} on line {e.__traceback__.tb_lineno} in {__file__}")
+		return ENTRIES
+
+
+def save_entries(execution_unit_dir: Union[str, Path], ENTRIES: list) -> None:
+	"""Write ENTRIES of an execution unit.
+
+	The file is replaced atomically, so concurrent readers (other CLI calls,
+	lautools-browser) never see a partially written file.
+	"""
+	path = entries_file(execution_unit_dir)
+	directory = os.path.dirname(path)
+	os.makedirs(directory, exist_ok=True)
+	handle, tmp = tempfile.mkstemp(dir=directory, prefix=".dag.json.")
+	try:
+		with os.fdopen(handle, "w") as f:
+			json.dump(ENTRIES, f, indent=2)
+		if os.path.exists(path):
+			os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+		else:
+			os.chmod(tmp, 0o666 & ~_current_umask())
+		os.replace(tmp, path)
+	except BaseException:
+		if os.path.exists(tmp):
+			os.unlink(tmp)
+		raise
+
+
+def _current_umask() -> int:
+	mask = os.umask(0)
+	os.umask(mask)
+	return mask
+
+
+def clean_entries(execution_unit_dir: Union[str, Path]) -> None:
+	"""Forget all ENTRIES of an execution unit (log files are kept)."""
+	save_entries(execution_unit_dir, [])
+
+
+# Deprecated names from before the DAG/ENTRIES distinction.
+update_dag_entries = update_entries
+load_dag = load_entries
+save_dag = save_entries
+clean_dag = clean_entries
+
+
+# ----------------------------------------------------------------------
+# Execution units and their pipeline directory
+# ----------------------------------------------------------------------
+
+def execution_unit_dirs(working_dir: Union[str, Path], pattern: str = None, require_pipeline: bool = False) -> List[Path]:
+	"""Return the execution units (immediate subdirectories) of a working directory, sorted by name.
+
+	pattern: case-insensitive substring the directory name must contain (as `pipeline -p`).
+	require_pipeline: only directories that already contain a pipeline/ directory.
+	"""
+	working_dir = Path(working_dir)
+	units = []
+	for child in working_dir.iterdir():
+		if not child.is_dir():  # follows symlinks
+			continue
+		if pattern is not None and pattern.lower() not in child.name.lower():
+			continue
+		if require_pipeline and not (child / "pipeline").is_dir():
+			continue
+		units.append(child)
+	return sorted(units, key=lambda path: path.name.lower())
+
+
+def remove_pipeline_dir(pipeline_dir: Union[str, Path]) -> None:
+	"""
+	Safely delete a pipeline directory and its log subdirectory.
+
+	Rules:
+	- Delete all files directly in pipeline_dir
+	- Delete all files in pipeline_dir/log
+	- Remove log directory
+	- Remove pipeline_dir itself
+	- Any other subdirectories in pipeline_dir remain untouched
+	"""
+	pipeline_dir = str(pipeline_dir)
+	if not os.path.exists(pipeline_dir):
+		print(f"No pipeline directory to delete at {pipeline_dir}")
+		return
+	if not os.path.isdir(pipeline_dir):
+		print(f"{pipeline_dir} exists but is not a directory! Skipping deletion.")
+		return
+	log_dir = os.path.join(pipeline_dir, "log")
+	# Delete files in pipeline_dir
+	for entry in os.listdir(pipeline_dir):
+		entry_path = os.path.join(pipeline_dir, entry)
+		if os.path.isfile(entry_path):
+			os.remove(entry_path)
+	# Delete log directory and its files
+	if os.path.isdir(log_dir):
+		for entry in os.listdir(log_dir):
+			file_path = os.path.join(log_dir, entry)
+			if os.path.isfile(file_path):
+				os.remove(file_path)
+		os.rmdir(log_dir)
+	# Finally remove pipeline_dir (should be empty except for unexpected dirs)
+	try:
+		os.rmdir(pipeline_dir)
+	except OSError:
+		print(f"Pipeline directory {pipeline_dir} not empty (other subdirs preserved).")
+
 
 def string_is_integer(s: str) -> bool:
 	"""Check if a string can be converted to an integer."""
@@ -136,9 +262,9 @@ def string_is_integer(s: str) -> bool:
 	except ValueError:
 		return False
 
-def constructDAG(DAG_ENTRIES: list) -> nx_DiGraph:
+def constructDAG(ENTRIES: list) -> nx_DiGraph:
 	"""
-	Construct a DAG from DAG_ENTRIES.
+	Construct the DAG of nodes referenced by ENTRIES.
 
 	Rules:
 	  - Numeric node names (>= 0) form an implicit chain:
@@ -157,7 +283,7 @@ def constructDAG(DAG_ENTRIES: list) -> nx_DiGraph:
 
 	# First add all nodes	 
 	max_numeric_node = 0
-	for entry in DAG_ENTRIES:
+	for entry in ENTRIES:
 		dag_node_name = entry.get("dag_node_name", None)
 		if dag_node_name is None:
 			dag_node_name = str(entry.get("step", 0))  # Fallback to step if dag_node_name is not provided
@@ -186,7 +312,7 @@ def constructDAG(DAG_ENTRIES: list) -> nx_DiGraph:
 		dag.add_edge(str(i), str(i + 1)) # Nodes are automatically created when adding edges, so no need to add them explicitly
 
 	# Add dependencies
-	for entry in DAG_ENTRIES:
+	for entry in ENTRIES:
 		dag_node_name = entry.get("dag_node_name", None)
 		node = str(dag_node_name)  # Normalize to string for consistent handling
 		dependencies = [str(dep) for dep in entry.get("dag_node_deps", [])]
@@ -207,44 +333,55 @@ def constructDAG(DAG_ENTRIES: list) -> nx_DiGraph:
 		raise ValueError(f"DAG contains a cycle: {cycle}")
 	return dag
 
-def resubmit_slurm_job(DAG_ENTRIES: list, entry_id: Union[str, int, Dict], env=None):
-	"""Resubmit a SLURM job based on the provided DAG entry and update the DAG with the new job ID."""
+def resubmit_slurm_job(ENTRIES: list, entry_id: Union[str, int, Dict], env=None):
+	"""Schedule the given entry again (cancelling its job if still active) and retire it.
+
+	entry_id: the entry dict, its slurm_id (int) or its job_id (str).
+	Returns the new entry; the caller appends it to ENTRIES and saves them.
+	"""
 	try:
 		if isinstance(entry_id, dict):
-			DAG_ENTRY = entry_id
+			# Use the entry inside ENTRIES (the dict passed may be a copy, e.g. from a UI)
+			ENTRY = next((entry for entry in ENTRIES if entry.get("job_id") == entry_id.get("job_id")), entry_id)
 		elif isinstance(entry_id, int):
-			DAG_ENTRY = next((entry for entry in DAG_ENTRIES if entry.get("slurm_id") == entry_id), None)
+			ENTRY = next((entry for entry in ENTRIES if entry.get("slurm_id") == entry_id), None)
 		elif isinstance(entry_id, str):
-			DAG_ENTRY = next((entry for entry in DAG_ENTRIES if str(entry.get("job_id")) == entry_id), None)
+			ENTRY = next((entry for entry in ENTRIES if str(entry.get("job_id")) == entry_id), None)
 		# First cancel and retire the existing job if it has a valid SLURM ID
-		if "slurm_id" in DAG_ENTRY and DAG_ENTRY["slurm_id"] is not None:
-			slurm_info = DAG_ENTRY.get("slurm_info", {})
+		if "slurm_id" in ENTRY and ENTRY["slurm_id"] is not None:
+			slurm_info = ENTRY.get("slurm_info", {})
 			slurm_state = slurm_info.get("State", "UNKNOWN")
-			if slurm_state not in ["COMPLETED", "FAILED", "CANCELLED"]:
-				subprocess.run(["scancel", str(DAG_ENTRY["slurm_id"])], check=False)
-				log.info(f"Cancelled SLURM job with ID {DAG_ENTRY['slurm_id']} for node '{DAG_ENTRY['dag_node_name']}'")
-		DAG_ENTRY["retired"] = True  # Mark the old entry as retired
-		JOB_ID = uuid.uuid4().hex
-		ROOTDIR = os.path.dirname(os.path.dirname(os.path.abspath(DAG_ENTRY["execution_unit_dir"])))
-		SLURM_CMD = DAG_ENTRY["slurm_command"].copy()  # Create a copy of the SLURM command to avoid modifying the original
-		NEW_DAG_ENTRY = schedule_slurm_job(
-			DAG_ENTRIES=DAG_ENTRIES,
-			dag_node_or_step_name=DAG_ENTRY["dag_node_name"],
-			script_name=DAG_ENTRY["script_name"],
-			job_name=DAG_ENTRY["job_name"],
-			execution_unit_dir=DAG_ENTRY["execution_unit_dir"],
+			if slurm_state not in TERMINAL_STATES:
+				slurm.scancel(ENTRY["slurm_id"])
+				log.info(f"Cancelled SLURM job with ID {ENTRY['slurm_id']} for node '{ENTRY['dag_node_name']}'")
+		SLURM_CMD = ENTRY["slurm_command"].copy()  # Create a copy of the SLURM command to avoid modifying the original
+		NEW_ENTRY = schedule_slurm_job(
+			ENTRIES=ENTRIES,
+			dag_node_or_step_name=ENTRY["dag_node_name"],
+			script_name=ENTRY["script_name"],
+			job_name=ENTRY["job_name"],
+			execution_unit_dir=ENTRY["execution_unit_dir"],
 			slurm_cmd=SLURM_CMD,
-			cmd=[DAG_ENTRY["command"]],
-			node_dependencies=DAG_ENTRY.get("dag_node_deps", []),
+			cmd=[ENTRY["command"]],
+			node_dependencies=ENTRY.get("dag_node_deps", []),
 			env=env,
 		)
-		return NEW_DAG_ENTRY
+		if NEW_ENTRY is not None:
+			# The old entry is retired only once its replacement is submitted
+			ENTRY["retired"] = True
+			ENTRY["retire_timestamp"] = time.time()
+			ENTRY["retired_reason"] = "Resubmitted"
+			ENTRY["retired_by"] = NEW_ENTRY["job_id"]
+		return NEW_ENTRY
 	except Exception as e:
-		log.error(f"Error resubmitting SLURM job for node '{DAG_ENTRY['dag_node_name']}': {e}")
+		log.error(f"Error resubmitting SLURM job for node '{ENTRY['dag_node_name']}': {e}")
 		return None
 
-def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_name: str, job_name: str, execution_unit_dir: str, slurm_cmd: list, cmd: list, node_dependencies: list = None, env=None) -> dict:
-	"""Submit a SLURM job based on the provided job entry and update the DAG with the job ID."""
+def schedule_slurm_job(ENTRIES: list, dag_node_or_step_name: str, script_name: str, job_name: str, execution_unit_dir: str, slurm_cmd: list, cmd: list, node_dependencies: list = None, env=None) -> dict:
+	"""Submit a SLURM job for a DAG node, depending on the active jobs of its ancestor nodes.
+
+	Returns the new entry (or None on failure); the caller appends it to ENTRIES and saves them.
+	"""
 	try:
 		JOB_ID = uuid.uuid4().hex
 		ROOTDIR = os.path.dirname(os.path.dirname(os.path.abspath(execution_unit_dir)))
@@ -252,29 +389,29 @@ def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_nam
 		numeric_node = False
 		negative_node = False
 		SLURM_CMD = slurm_cmd.copy()  # Create a copy of the SLURM command to avoid modifying the original
-		DAG_ENTRY = {}
-		DAG_ENTRY["script_name"] = script_name
-		DAG_ENTRY["job_name"] = job_name
-		DAG_ENTRY["dag_node_name"] = dag_node_or_step_name
-		DAG_ENTRY["command"] = " ".join(cmd)
-		DAG_ENTRY["slurm_command"] = slurm_cmd
-		DAG_ENTRY["execution_unit_name"] = os.path.basename(execution_unit_dir)
-		DAG_ENTRY["execution_unit_dir"] = execution_unit_dir
+		NEW_ENTRY = {}
+		NEW_ENTRY["script_name"] = script_name
+		NEW_ENTRY["job_name"] = job_name
+		NEW_ENTRY["dag_node_name"] = dag_node_or_step_name
+		NEW_ENTRY["command"] = " ".join(cmd)
+		NEW_ENTRY["slurm_command"] = slurm_cmd
+		NEW_ENTRY["execution_unit_name"] = os.path.basename(execution_unit_dir)
+		NEW_ENTRY["execution_unit_dir"] = execution_unit_dir
 		if string_is_integer(dag_node_or_step_name):
 			step = int(dag_node_or_step_name)
-			DAG_ENTRY["step"] = step
-			DAG_ENTRY["dag_node_deps"] = []  # Numeric nodes do not have explicit
+			NEW_ENTRY["step"] = step
+			NEW_ENTRY["dag_node_deps"] = []  # Numeric nodes do not have explicit
 			numeric_node = True
 			if step < 0:
 				negative_node = True
 		else:
-			DAG_ENTRY["step"] = -2	# Use -2 for named nodes
-			DAG_ENTRY["dag_node_deps"] = node_dependencies if node_dependencies else []
+			NEW_ENTRY["step"] = -2	# Use -2 for named nodes
+			NEW_ENTRY["dag_node_deps"] = node_dependencies if node_dependencies else []
 		if not negative_node:
-			DAG = constructDAG(DAG_ENTRIES + [DAG_ENTRY])
+			DAG = constructDAG(ENTRIES + [NEW_ENTRY])
 			#Get all ancestors
 			ancestors = nx_ancestors(DAG, dag_node_or_step_name)
-			dependencies = [entry for entry in DAG_ENTRIES if str(entry["dag_node_name"]) in ancestors and entry.get("retired", False) == False and "slurm_id" in entry and entry.get("slurm_info", {}).get("State", "UNKNOWN") not in ["COMPLETED"] ]
+			dependencies = [entry for entry in ENTRIES if str(entry["dag_node_name"]) in ancestors and entry.get("retired", False) == False and "slurm_id" in entry and entry.get("slurm_info", {}).get("State", "UNKNOWN") not in ["COMPLETED"] ]
 			print(f"Scheduling SLURM job '{job_name}' for node '{dag_node_or_step_name}' with dependencies: {[entry['script_name'] for entry in dependencies]}")
 			active_dependencies = get_active_slurmids(dependencies, raise_on_fail=True)
 			if len(active_dependencies) > 0:
@@ -284,11 +421,11 @@ def schedule_slurm_job(DAG_ENTRIES: list, dag_node_or_step_name: str, script_nam
 		if slurm_id is None:
 			log.error(f"Failed to schedule SLURM job '{job_name}' for node '{dag_node_or_step_name}'")
 			return None
-		DAG_ENTRY["job_id"] = JOB_ID
-		DAG_ENTRY["slurm_id"] = slurm_id
-		DAG_ENTRY["retired"] = False
-		DAG_ENTRY["timestamp"] = time.time()
-		return DAG_ENTRY
+		NEW_ENTRY["job_id"] = JOB_ID
+		NEW_ENTRY["slurm_id"] = slurm_id
+		NEW_ENTRY["retired"] = False
+		NEW_ENTRY["timestamp"] = time.time()
+		return NEW_ENTRY
 	except Exception as e:
 		log.error(f"Error scheduling SLURM job {job_name} with step/dag_node '{dag_node_or_step_name}': {e}")
 		log.error(f"{e.__class__.__name__} on line {e.__traceback__.tb_lineno} in {__file__}")

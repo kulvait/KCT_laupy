@@ -6,18 +6,11 @@ import time
 import argparse
 from laupy import maxwell
 from subprocess import run
-from pathlib import Path
 import shlex
-import json
-import re
-import uuid
 import logging
-from laupy import slurm
-from laupy.flow import load_dag, save_dag, clean_dag
-from laupy.flow import update_dag_entries, schedule_slurm_job
-from laupy.slurm import get_active_slurmids, run_slurm_command
-
-import subprocess
+from laupy.cli import add_common_arguments, parse_comma_separated, print_arguments, resolve_layout
+from laupy.entries import EntriesStore, select_entries, retire_entries, cancel_entries
+from laupy.flow import clean_entries, remove_pipeline_dir, schedule_slurm_job
 
 # Create a logger specific to this module
 log = logging.getLogger(__name__)
@@ -33,35 +26,13 @@ ch.setFormatter(formatter)
 log.addHandler(ch)
 log.propagate = False  # Prevent log messages from being propagated to the root logger
 
-def get_slurmids_by_state(dag_entries, states):
-    """
-    Given a list of DAG entries and a list of SLURM states, return the job IDs of entries that are in those states.
-    
-    Parameters
-    ----------
-    dag_entries : list of dict
-	List of DAG entries, each containing at least "job_id" and "slurm_info" with "State".
-    states : list of str
-	List of SLURM states to filter by (e.g., ["PENDING", "RUNNING"]).
-    
-    Returns
-    -------
-    slurm_ids : list of int
-	Job IDs of entries whose SLURM state is in the specified states.
-    """
-    slurm_ids = []
-    for entry in dag_entries:
-        job_id = entry["job_id"]
-        status = entry.get("slurm_info", {}).get("State", "UNKNOWN")
-        if status in states:
-            slurm_ids.append(job_id)
-    return slurm_ids
+STATE_CHOICES = ["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"]
 
 
 def appendCommand(cmd_list, pipeline_file):
     """
     Append a command to the pipeline script file.
-    
+
     Parameters:
     - cmd_list: list of command arguments (like ['python', 'script.py', 'arg'])
     - pipeline_file: path to pipeline script (str)
@@ -80,66 +51,16 @@ def appendCommand(cmd_list, pipeline_file):
         f.write(cmd_str + "\n")
 
 
-def removePipelineDir(pipeline_dir):
-    """
-    Safely delete a pipeline directory and its log subdirectory.
-    
-    Rules:
-    - Delete all files directly in pipeline_dir
-    - Delete all files in pipeline_dir/log
-    - Remove log directory
-    - Remove pipeline_dir itself
-    - Any other subdirectories in pipeline_dir remain untouched
-    """
-    if not os.path.exists(pipeline_dir):
-        print(f"No pipeline directory to delete at {pipeline_dir}")
-        return
+def range_entries(range_name, node_entries, cmd_entries, jobname_entries):
+    """Entries of the submitted node covered by a --skip/--cancel/--retire-range value."""
+    return {"cmd": cmd_entries, "step": node_entries, "jobname": jobname_entries}.get(range_name, [])
 
-    if not os.path.isdir(pipeline_dir):
-        print(f"{pipeline_dir} exists but is not a directory! Skipping deletion.")
-        return
-
-    log_dir = os.path.join(pipeline_dir, "log")
-
-    print(f"Deleting contents of pipeline directory safely: {pipeline_dir}")
-
-    # Delete files in pipeline_dir
-    for entry in os.listdir(pipeline_dir):
-        entry_path = os.path.join(pipeline_dir, entry)
-        if os.path.isfile(entry_path):
-            os.remove(entry_path)
-
-    # Delete log directory and its files
-    if os.path.exists(log_dir) and os.path.isdir(log_dir):
-        for entry in os.listdir(log_dir):
-            file_path = os.path.join(log_dir, entry)
-            if os.path.isfile(file_path):
-                os.remove(file_path)
-        os.rmdir(log_dir)  # remove log directory itself
-
-    # Finally remove pipeline_dir (should be empty except for unexpected dirs)
-    try:
-        os.rmdir(pipeline_dir)
-    except OSError:
-        print(f"Pipeline directory {pipeline_dir} not empty (other subdirs preserved).")
-
-def parse_comma_separated(value):
-    """
-    Parse a comma-separated string into a list of strings.
-    
-    Example:
-    "dir1,dir2,dir3" -> ["dir1", "dir2", "dir3"]
-    """
-    return [item.strip() for item in value.split(",") if item.strip()]
 
 def main():
     parser = argparse.ArgumentParser(description="Submit jobs to SLURM using laupy")
-    
+
     # Define command-line arguments
-    parser.add_argument("-d", "--root-dir", type=str, help="Root directory (defaults to current directory)", default=None)
-    parser.add_argument("-w", "--working-dir", type=parse_comma_separated, action="append", required=False, help="One or more working directories. Can be comma-separated or repeated. Defaults to wd.", default=None)
-    parser.add_argument("--slurm-dir", type=str, help="Working directory, shall be subdirectory of the root dir (defaults to 'wd')", default="sbatch")
-    parser.add_argument("-p", "--pattern", type=str, help="Pattern for directory matching")
+    add_common_arguments(parser, dry_run_help="Simulate the submission without actually submitting jobs or creating files")
     parser.add_argument("-a", "--slurmargs", type=str, help="Additional SLURM arguments")
     parser.add_argument("-f", "--partition", type=str, help="Partition to use (defaults to 'allcpu,allgpu')", default="allcpu,allgpu")
     parser.add_argument("-n", "--nodelist", type=str, help="Specify node list")
@@ -149,61 +70,31 @@ def main():
     parser.add_argument("-e", "--excellent-nodes", action="store_true", help="Use excellent nodes only")
     parser.add_argument("-s", "--strong-nodes", action="store_true", help="Use strong nodes only")
     parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate the submission without actually submitting jobs or crating files")
-    parser.add_argument("--verbose", action="store_true", help="Print detailed information about the submission process")
     scheduling_group = parser.add_mutually_exclusive_group()
     scheduling_group.add_argument("--pipeline-step", type=str, default="-1", help="Pipeline step number or DAG node name. Uses only explicit DAG dependencies. Default is -1, which are not put or evaluated against DAG.")
     parser.add_argument("--dependencies", type=parse_comma_separated, action="append", default=None, metavar="NODE[,NODE...]", help="Dependencies for non numeric --pipeline-step/DAG node, comma-separated or repeated. Can also be numeric pipeline steps (e.g., 0,1,2), numeric pipeline steps can not have explicit --dependencies. Default is None.")
-    parser.add_argument("--skip-range", type=str, choices=["none", "cmd", "jobname", "step"], default="cmd", help="Scope of skipping DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
-    parser.add_argument("--skip-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["PENDING", "RUNNING", "REQUEUED"], help="SLURM job states to yield to command submitted in the same step with coresponging state. Default is PENDING, RUNNING, REQUEUED.")
-    parser.add_argument("--retire-range", type=str, choices=["none", "cmd", "step"], default="cmd", help="Scope of retiring DAG entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
-    parser.add_argument("--retire-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["FAILED", "CANCELLED", "TIMEOUT"], help="SLURM job states that trigger retiring of DAG entries in the same step on new submission with --retire-range set to 'cmd' or 'step'. Default is FAILED, CANCELLED, TIMEOUT.")
+    parser.add_argument("--skip-range", type=str, choices=["none", "cmd", "jobname", "step"], default="cmd", help="Scope of entries of the same node that make the new submission be skipped: 'none' (never skip), 'cmd' (same command), 'jobname' (same SLURM job name), 'step' (any entry of the node). Default is 'cmd'.")
+    parser.add_argument("--skip-state", nargs="+", choices=STATE_CHOICES, default=["PENDING", "RUNNING", "REQUEUED"], help="SLURM job states to yield to command submitted in the same step with coresponging state. Default is PENDING, RUNNING, REQUEUED.")
+    parser.add_argument("--retire-range", type=str, choices=["none", "cmd", "step"], default="cmd", help="Scope of retiring entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
+    parser.add_argument("--retire-state", nargs="+", choices=STATE_CHOICES, default=["FAILED", "CANCELLED", "TIMEOUT"], help="SLURM job states that trigger retiring of entries in the same step on new submission with --retire-range set to 'cmd' or 'step'. Default is FAILED, CANCELLED, TIMEOUT.")
     parser.add_argument("--cancel-range", type=str, choices=["none", "cmd", "step"], default="none", help="Scope of cancelling active jobs on new submission: 'none' (cancel nothing), 'cmd' (cancel only jobs with the same command and step), 'step' (cancel all jobs with the same step regardless of command). Default is 'none'.")
-    parser.add_argument("--cancel-state", nargs="+", choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"], default=["NONE"], help="SLURM job states that trigger cancellation of active jobs in the same step on new submission with --cancel-range set to 'cmd' or 'step'. Default is NONE (no cancellations).")
-    # ---- Pipeline management: mutually exclusive subgroup ----
+    parser.add_argument("--cancel-state", nargs="+", choices=STATE_CHOICES, default=["NONE"], help="SLURM job states that trigger cancellation of active jobs in the same step on new submission with --cancel-range set to 'cmd' or 'step'. Default is NONE (no cancellations).")
+    # ---- Pipeline directory management (same as `pipeline create|clean|delete`) ----
     pipeline_group = parser.add_mutually_exclusive_group()
-    pipeline_group.add_argument("--create-pipeline-only", action="store_true", help="Create only the pipeline scripts/DAG and exit (scriptName not required).")
-    pipeline_group.add_argument("--clean-dag", action="store_true", help="Clean DAG entries for the specified pipeline (scriptName not required).")
-    pipeline_group.add_argument("--delete-pipeline-only", action="store_true", help="Delete existing pipeline/DAG artifacts and exit (scriptName not required).")
+    pipeline_group.add_argument("--create-pipeline-only", action="store_true", help="Create only the pipeline directory and exit (scriptName not required); same as `pipeline create`.")
+    pipeline_group.add_argument("--clean-dag", action="store_true", help="Forget the pipeline entries and exit (scriptName not required); same as `pipeline clean`.")
+    pipeline_group.add_argument("--delete-pipeline-only", action="store_true", help="Delete the pipeline directory and exit (scriptName not required); same as `pipeline delete`.")
     parser.add_argument("scriptName", type=str, nargs="?", help="Script to execute in each working directory")
 
     # Parse the arguments
     ARG = parser.parse_args()
     if ARG.verbose:
-        print("Parsed arguments:")
-        for arg_name, arg_value in vars(ARG).items():
-            print(f"  {arg_name}: {arg_value}")
+        print_arguments(ARG)
 
     pipeline_mode = ARG.create_pipeline_only or ARG.clean_dag or ARG.delete_pipeline_only
     if not pipeline_mode and ARG.scriptName is None:
         parser.error("scriptName is required unless using --create-pipeline-only, --clean-dag, or --delete-pipeline-only.")
-    if ARG.root_dir is None:
-        ROOTDIR = Path.cwd()
-    else:
-        ROOTDIR = Path(ARG.root_dir)
-    ROOTDIR = ROOTDIR.expanduser().resolve()
-    print(f"Changing to root directory: {ROOTDIR}")
-    os.chdir(ROOTDIR)
-    # Normalize working directory path
-    working_dirs = ["wd"] if ARG.working_dir is None else [ d for group in ARG.working_dir for d in group ]
-    WD = [Path(d) for d in working_dirs]
-    WD_PATH_ABS = [ d.resolve() if d.is_absolute() else (Path(ROOTDIR) / d).resolve() for d in WD ]
-    WD_PATH_REL = [ os.path.relpath(abs_path, ROOTDIR) for abs_path in WD_PATH_ABS ]
-    for wd, wd_abs, wd_rel in zip(WD, WD_PATH_ABS, WD_PATH_REL):
-        if not wd.is_dir() or ( wd.is_symlink() and not wd.resolve().is_dir() ):
-            print(f"Working directory {wd_rel} does not exist or is not a directory.", file=sys.stderr)
-            sys.exit(1)
-    # Normalize SLURM script directory path
-    SBATCH_DIR = Path(ARG.slurm_dir)
-    if SBATCH_DIR.is_absolute():
-        SBATCH_DIR_ABS = SBATCH_DIR
-    else:
-        SBATCH_DIR_ABS = (Path(ROOTDIR) / SBATCH_DIR)
-    SBATCH_DIR_REL = os.path.relpath(SBATCH_DIR_ABS, ROOTDIR)
-    SBATCH_DIR_ABS = SBATCH_DIR_ABS.resolve()
-    if not SBATCH_DIR.is_dir() or SBATCH_DIR.is_symlink() and not SBATCH_DIR.resolve().is_dir():
-        print(f"SLURM script directory {SBATCH_DIR_REL} does not exist or is not a directory.", file=sys.stderr)
-        sys.exit(1)
+    layout = resolve_layout(ARG)
 
     #If --partition is not set by the user and --gpu-nodes is requested, set partition to "allgpu"
     partition_was_user_set = any(arg in ("-f", "--partition") for arg in sys.argv)
@@ -211,34 +102,20 @@ def main():
         ARG.partition = "allgpu"
         print("GPU nodes requested without explicit -f/--partition, setting partition to 'allgpu'")
 
-
-     # Check if script exists
+    # Check if script exists
     if not pipeline_mode:
         SCRIPTNAME = ARG.scriptName
-        SCRIPT_ABS = os.path.join(SBATCH_DIR_ABS, SCRIPTNAME)
-        SCRIPT_REL = os.path.join(SBATCH_DIR_REL, SCRIPTNAME)
+        SCRIPT_ABS = os.path.join(layout.sbatch_abs, SCRIPTNAME)
+        SCRIPT_REL = os.path.join(layout.sbatch_rel, SCRIPTNAME)
         if not os.path.isfile(SCRIPT_ABS):
             print(f"Script {SCRIPT_REL} does not exist.", file=sys.stderr)
             sys.exit(1)
 
-    subdirs = []
-    for wd_abs, wd_rel in zip(WD_PATH_ABS, WD_PATH_REL):
-        for subdir in wd_abs.iterdir():
-            if subdir.is_dir() or ( subdir.is_symlink() and subdir.resolve().is_dir() ):
-                if ARG.pattern is None or ARG.pattern.lower() in subdir.name.lower():
-                    subdirs.append({ "subdir": subdir.name, "subdir_abs": str(subdir.resolve()), "subdir_rel": str(os.path.relpath(subdir.resolve(), ROOTDIR)) })
-
-    if len(subdirs) == 0:
-        if ARG.pattern is not None:
-            print("No subdirectories of %s match the specified pattern '%s'." % (", ".join(WD_PATH_REL), ARG.pattern), file=sys.stderr)
-        else:
-            print("No subdirectories of %s found." % (", ".join(WD_PATH_REL)), file=sys.stderr)
-        sys.exit(1)
     SLURM_ARGS_LIST = []
     # Node list handling
     node_list = []
     excluded_node_list = []
-    
+
     if ARG.nodelist:
         node_list = maxwell.nodes_from_string(ARG.nodelist)
     elif ARG.excellent_nodes:
@@ -250,7 +127,7 @@ def main():
     if ARG.gpu_nodes:
         gpu_nodes = maxwell.get_gpu_nodes(partition=ARG.partition)
         if len(node_list) > 0:
-            node_list = list(set(node_list).intersection(set(gpu_nodes))) 
+            node_list = list(set(node_list).intersection(set(gpu_nodes)))
         else:
             node_list = gpu_nodes
     if len(node_list) > 0 or len(excluded_node_list) > 0:
@@ -273,21 +150,46 @@ def main():
 
     SLURM_ARGS_LIST.append(f"--partition={ARG.partition}")
 
-    for subdir_dct in subdirs:
+    # DAG node of the submission (resolved once for all execution units)
+    dependencies = [dep for group in ARG.dependencies for dep in group] if ARG.dependencies else []
+    dag_node_name = None
+    if not pipeline_mode and ARG.pipeline_step != "-1":
+        try:
+            integer_pipeline_step = int(ARG.pipeline_step)
+            if integer_pipeline_step < 0:
+                print(f"Negative numeric pipeline step {integer_pipeline_step} different from -1 is not allowed.", file=sys.stderr)
+                sys.exit(1)
+            dag_node_name = f"{integer_pipeline_step}"
+            if ARG.dependencies is not None:
+                log.error(f"Error: --dependencies can not be used with numeric --pipeline-step {ARG.pipeline_step}. Use a non-numeric DAG node name for --pipeline-step to specify explicit dependencies.")
+        except ValueError:
+            dag_node_name = ARG.pipeline_step
+
+    # ENTRIES of all execution units with one batched SLURM query for the
+    # submitted node and its ancestors (dependencies, skip/retire/cancel checks).
+    store = None
+    if dag_node_name is not None and not ARG.dry_run:
+        store = EntriesStore([processing_unit_subdir.abs for processing_unit_subdir in layout.units])
+        store.refresh(limit_to_ancestors_including_node=dag_node_name, update_retired=False, update_negative_step=False, filter_terminal_states=True, node_dependencies=dependencies)
         if ARG.verbose:
-            print(f"Processing subdir: {subdir_dct['subdir_rel']} (abs: {subdir_dct['subdir_abs']})")
-        subdir = subdir_dct["subdir"]
-        SUBDIR_ABS = subdir_dct["subdir_abs"]
-        SUBDIR_REL = subdir_dct["subdir_rel"]
+            from laupy.slurm import QUERY_COUNTS
+            print(f"SLURM queries: {QUERY_COUNTS}")
+
+    for processing_unit_subdir in layout.units:
+        if ARG.verbose:
+            print(f"Processing {processing_unit_subdir.rel} (abs: {processing_unit_subdir.abs})")
+        subdir = processing_unit_subdir.name
+        SUBDIR_ABS = processing_unit_subdir.abs
+        SUBDIR_REL = processing_unit_subdir.rel
         # Create job name
         if not pipeline_mode:
             SCRIPTNAME_NOEXT = os.path.splitext(SCRIPTNAME)[0]
             JOBNAME = f"{SCRIPTNAME_NOEXT}_{subdir}"
-            EXPORTS= { "PIPELINE_SCRIPTNAME": SCRIPTNAME, "PIPELINE_JOBNAME": JOBNAME, "LD_PRELOAD": "" }
+            EXPORTS = {"PIPELINE_SCRIPTNAME": SCRIPTNAME, "PIPELINE_JOBNAME": JOBNAME, "LD_PRELOAD": ""}
             EXPORT_STR = ",".join(f"{key}={value}" for key, value in EXPORTS.items())
             if ARG.delaytime > 0:
                 time.sleep(ARG.delaytime)
-            SLURM_CMD = ["sbatch"] + SLURM_ARGS_LIST 
+            SLURM_CMD = ["sbatch"] + SLURM_ARGS_LIST
             SLURM_CMD += [f"--job-name={JOBNAME}"]
             SLURM_CMD += [f"--export=ALL,{EXPORT_STR}"]
             SLURM_CMD += ["--output=" + os.path.join(SUBDIR_REL, "pipeline", "log", f"{SCRIPTNAME_NOEXT}-%N-%j.out")]
@@ -300,106 +202,68 @@ def main():
             SLURM_CMD_REL = SLURM_CMD.copy() + EXEC_CMD_REL
             SLURM_CMD_ABS = SLURM_CMD.copy() + EXEC_CMD_ABS
             SLURM_CMD = SLURM_CMD_REL
-            print(f"SLURM in {subdir_dct['subdir_abs']}")
+            print(f"SLURM in {SUBDIR_ABS}")
             print(" ".join(SLURM_CMD))
-            dependencies = [ dep for group in (ARG.dependencies or []) for dep in group ] if ARG.dependencies else []
-        if not ARG.dry_run:
-            PIPELINE_DIR = os.path.join(SUBDIR_ABS, "pipeline")
-            PIPELINE_LOG_DIR = os.path.join(PIPELINE_DIR, "log")
-            if ARG.delete_pipeline_only:
-                #Delete pipeline directory if requested
-                print(f"In {subdir_dct['subdir_abs']}, deleting pipeline directory {PIPELINE_DIR} and all its contents (logs, DAGs, scripts)")
-                removePipelineDir(PIPELINE_DIR)
-            elif ARG.clean_dag:
-                #Clean DAG entries for the specified pipeline to resolve failed dependencies without creating new pipeline scripts or submitting jobs
-                print(f"In {subdir_dct['subdir_abs']}, cleaning DAG file pipeline/dag.json")
-                clean_dag(SUBDIR_ABS)
-            else:
-                os.makedirs(PIPELINE_LOG_DIR, exist_ok=True)
-                #Append command to pipeline/exec.sh
-            if not ARG.create_pipeline_only and not ARG.delete_pipeline_only and not ARG.clean_dag:
-                if ARG.pipeline_step != "-1":
-                    try:
-                        integer_pipeline_step = int(ARG.pipeline_step)
-                        if integer_pipeline_step < 0:
-                            log.warning(f"Negative numeric pipeline step {integer_pipeline_step} different from -1 is not allowed. Skipping submission for {SUBDIR_REL}.")
-                            continue  # Skip negative numeric nodes
-                        else:
-                            dag_node_name = f"{integer_pipeline_step}"
-                            if ARG.dependencies is not None:
-                                msg = f"Error: --dependencies can not be used with numeric --pipeline-step {ARG.pipeline_step}. Use a non-numeric DAG node name for --pipeline-step to specify explicit dependencies."
-                                log.error(msg)
-                    except ValueError:
-                         dag_node_name = ARG.pipeline_step
-                    DAG = load_dag(SUBDIR_ABS)
-                    update_dag_entries(DAG, limit_to_ancestors_including_node=dag_node_name, update_retired=False, update_negative_step=False, filter_terminal_states=True, node_dependencies=dependencies)
-                    #Get entries of potential dependencies and same step entries and same step and command entries to evaluate skip conditions and retirement
-                    node_dag_entries = [ entry for entry in DAG if entry["dag_node_name"] == dag_node_name and "job_id" in entry and not entry.get("retired", False) ]
-                    cmd_dag_entries = [ entry for entry in node_dag_entries if entry["command"] == " ".join(EXEC_CMD_ABS) ]
-                    scriptname_dag_entries = [ entry for entry in node_dag_entries if entry.get("script_name", "") == SCRIPTNAME ]
-                    jobname_dag_entries = [ entry for entry in node_dag_entries if entry.get("slurm_info", {}).get("JobName", "") == JOBNAME ]
-                    #Evaluate skip conditions
-                    if ARG.skip_range == "cmd":
-                        skip_entries = cmd_dag_entries
-                    elif ARG.skip_range == "step":
-                        skip_entries = node_dag_entries
-                    elif ARG.skip_range == "jobname":
-                        skip_entries = jobname_dag_entries
-                    elif ARG.skip_range == "scriptname":
-                        skip_entries = scriptname_dag_entries
-                    elif ARG.skip_range == "none":
-                         skip_entries = []
-                    if len(skip_entries) > 0:
-                        skip_entries = get_slurmids_by_state(skip_entries, ARG.skip_state)
-                        if len(skip_entries) > 0:
-                            print(f"Skipping submission for {SUBDIR_REL} because there are {len(skip_entries)} active entries with the same skip range {ARG.skip_range} in {ARG.skip_state}: {skip_entries}")
-                            continue
-                    try: 
-                        DAG_ID = uuid.uuid4().hex
-                        #Cancel active jobs based on --cancel-range and --cancel-state
-                        if ARG.cancel_range != "none":
-                            cancel_candidates = []
-                            if ARG.cancel_range == "cmd":
-                                cancel_candidates = cmd_dag_entries
-                            elif ARG.cancel_range == "step":
-                                cancel_candidates = node_dag_entries
-                            cancel_slurmids = get_slurmids_by_state(cancel_candidates, ARG.cancel_state)
-                            for jid in cancel_slurmids:
-                                entry = next((entry for entry in cancel_candidates if entry["job_id"] == jid), None)
-                                if entry is not None and not entry.get("retired", False):
-                                    entry["retired"] = True # Mark the entry as retired in the DAG
-                                    entry["retire_timestamp"] = time.time()
-                                    entry["redired_by"] = DAG_ID
-                                    entry["retired_reason"] = f"Cancelled due to new submission with --cancel-range {ARG.cancel_range} and --cancel-state {ARG.cancel_state}"
-                                print(f"Cancelling active job with ID {jid} due to new submission with --cancel-range {ARG.cancel_range} and --cancel-state {ARG.cancel_state}")
-                                run(["scancel", str(jid)])
-                        if ARG.retire_range != "none":
-                            retire_candidates = []
-                            if ARG.retire_range == "cmd":
-                                retire_candidates = cmd_dag_entries
-                            elif ARG.retire_range == "step":
-                                retire_candidates = node_dag_entries
-                            retire_slurmids = get_slurmids_by_state(retire_candidates, ARG.retire_state)
-                            for entry in retire_candidates:
-                                if entry["job_id"] in retire_slurmids and not entry.get("retired", False):
-                                    entry["retired"] = True
-                                    entry["retire_timestamp"] = time.time()
-                                    entry["redired_by"] = DAG_ID
-                                    entry["retired_reason"] = f"Retired due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}"
-                                    print(f"Retiring DAG entry with job ID {entry['job_id']} due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}")
-                        DAG_ENTRY = schedule_slurm_job(DAG, dag_node_name, SCRIPTNAME, JOBNAME, SUBDIR_ABS, SLURM_CMD_ABS, EXEC_CMD_ABS, node_dependencies=dependencies)
-                        if DAG_ENTRY is not None:
-                            DAG.append(DAG_ENTRY)
-                            save_dag(SUBDIR_ABS, DAG)
-                            appendCommand(EXEC_CMD_ABS, os.path.join(SUBDIR_ABS, "pipeline", "exec.sh"))
-                    except RuntimeError as e:
-                        print(f"Not submitting job for {SUBDIR_REL} due to failed dependency: {e}")
-                        continue
-                    except Exception as e:
-                        print(f"Error submitting job for {SUBDIR_REL}: {e}")
-                        continue
+        if ARG.dry_run:
+            continue
+        PIPELINE_DIR = os.path.join(SUBDIR_ABS, "pipeline")
+        PIPELINE_LOG_DIR = os.path.join(PIPELINE_DIR, "log")
+        if ARG.delete_pipeline_only:
+            print(f"In {SUBDIR_ABS}, deleting pipeline directory {PIPELINE_DIR} and all its contents (logs, entries, scripts)")
+            remove_pipeline_dir(PIPELINE_DIR)
+            continue
+        if ARG.clean_dag:
+            # Forget the entries to resolve failed dependencies without creating new pipeline scripts or submitting jobs
+            print(f"In {SUBDIR_ABS}, cleaning entries file pipeline/dag.json")
+            clean_entries(SUBDIR_ABS)
+            continue
+        os.makedirs(PIPELINE_LOG_DIR, exist_ok=True)
+        if ARG.create_pipeline_only:
+            continue
+        if dag_node_name is None:
+            run(SLURM_CMD)  # --pipeline-step -1: plain submission outside the DAG
+            continue
+
+        ENTRIES = store[SUBDIR_ABS]
+        # Non-retired entries of the submitted node, by scope, to evaluate skip, cancel and retire
+        node_entries = [entry for entry in ENTRIES if entry.get("dag_node_name") == dag_node_name and "job_id" in entry and not entry.get("retired", False)]
+        cmd_entries = [entry for entry in node_entries if entry.get("command") == " ".join(EXEC_CMD_ABS)]
+        jobname_entries = [entry for entry in node_entries if entry.get("slurm_info", {}).get("JobName", "") == JOBNAME]
+        # Skip if an entry in scope is still in one of --skip-state
+        skip_entries = select_entries(range_entries(ARG.skip_range, node_entries, cmd_entries, jobname_entries), ARG.skip_state)
+        if skip_entries:
+            skip_ids = [entry.get("slurm_id") or entry["job_id"] for entry in skip_entries]
+            print(f"Skipping submission for {SUBDIR_REL} because there are {len(skip_entries)} active entries with the same skip range {ARG.skip_range} in {ARG.skip_state}: {skip_ids}")
+            continue
+        try:
+            # Cancel active jobs in --cancel-range/--cancel-state before submitting the replacement
+            cancel_candidates = select_entries(range_entries(ARG.cancel_range, node_entries, cmd_entries, jobname_entries), ARG.cancel_state)
+            cancelled = []
+            for result in cancel_entries(ENTRIES, [entry["job_id"] for entry in cancel_candidates], refresh=False):
+                if result["error"] is None:
+                    print(f"Cancelled active job with ID {result['slurm_id']} due to new submission with --cancel-range {ARG.cancel_range} and --cancel-state {ARG.cancel_state}")
+                    cancelled.append(result["entry"]["job_id"])
                 else:
-                    run(SLURM_CMD)
+                    print(f"Could not cancel job with ID {result['slurm_id']}: {result['error']}")
+            retire_candidates = select_entries(range_entries(ARG.retire_range, node_entries, cmd_entries, jobname_entries), ARG.retire_state)
+            NEW_ENTRY = schedule_slurm_job(ENTRIES, dag_node_name, SCRIPTNAME, JOBNAME, SUBDIR_ABS, SLURM_CMD_ABS, EXEC_CMD_ABS, node_dependencies=dependencies)
+            if NEW_ENTRY is not None:
+                ENTRIES.append(NEW_ENTRY)
+                # The replaced entries are retired and point to the entry that replaced them
+                retire_entries(ENTRIES, cancelled, retired_by=NEW_ENTRY["job_id"],
+                               reason=f"Cancelled due to new submission with --cancel-range {ARG.cancel_range} and --cancel-state {ARG.cancel_state}")
+                for entry in retire_entries(ENTRIES, [entry["job_id"] for entry in retire_candidates], retired_by=NEW_ENTRY["job_id"],
+                                            reason=f"Retired due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}"):
+                    print(f"Retiring entry with job ID {entry['job_id']} due to new submission with --retire-range {ARG.retire_range} and --retire-state {ARG.retire_state}")
+                appendCommand(EXEC_CMD_ABS, os.path.join(SUBDIR_ABS, "pipeline", "exec.sh"))
+        except RuntimeError as e:
+            print(f"Not submitting job for {SUBDIR_REL} due to failed dependency: {e}")
+        except Exception as e:
+            print(f"Error submitting job for {SUBDIR_REL}: {e}")
+        finally:
+            # Persist each subdir right away: new entry, retirements, cancellations
+            store.save([SUBDIR_ABS])
+
 
 if __name__ == "__main__":
     main()
