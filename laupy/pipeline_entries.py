@@ -61,13 +61,22 @@ def entry_slurm_id(entry: dict):
     return entry.get("slurm_id") or entry.get("slurm_info", {}).get("JobID")
 
 
+def entry_matches_id(entry: dict, ids) -> bool:
+    """True if the entry's job_id (laupy UUID) or its SLURM ID is in ids (compared as strings)."""
+    slurm_id = entry_slurm_id(entry)
+    return str(entry.get("job_id", "")) in ids or (slurm_id is not None and str(slurm_id) in ids)
+
+
 def select_pipeline_entries(PIPELINE_ENTRIES: list, states, job_ids: list = None, steps: list = None) -> list:
-    """Non-retired entries whose slurm_info State is in `states`, optionally limited to job IDs or steps."""
+    """Non-retired entries whose slurm_info State is in `states`, optionally limited to IDs or steps.
+
+    job_ids may mix entry job_ids (laupy UUIDs) and SLURM job IDs.
+    """
     states = set(states)
     selected = [entry for entry in PIPELINE_ENTRIES if not entry.get("retired", False) and entry.get("slurm_info", {}).get("State") in states]
     if job_ids:
         job_ids = {str(jid) for jid in job_ids}
-        selected = [entry for entry in selected if str(entry.get("job_id", "")) in job_ids]
+        selected = [entry for entry in selected if entry_matches_id(entry, job_ids)]
     elif steps:
         steps = {str(step) for step in steps}
         selected = [entry for entry in selected if str(entry.get("step", "")) in steps]

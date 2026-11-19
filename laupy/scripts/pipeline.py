@@ -3,6 +3,7 @@
 import os
 import sys
 import argparse
+import re
 from termcolor import colored
 from laupy.cli import add_common_arguments, print_arguments, resolve_directory_tree
 from laupy.pipeline_entries import (RETIRABLE_STATES, CANCELLABLE_STATES, PipelineEntriesStore, entry_slurm_id,
@@ -33,6 +34,17 @@ def job_basic_info(entry, state=None):
             f"State: {state or slurm_info.get('State', 'UNKNOWN')}")
 
 
+_ENTRY_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def parse_job_id(value):
+    """argparse type for --job: a SLURM job ID (integer, e.g. 24170104) or an entry job_id (32 hex characters)."""
+    value = value.strip()
+    if value.isdigit() or _ENTRY_ID_RE.match(value):
+        return value
+    raise argparse.ArgumentTypeError(f"expected a SLURM job ID (e.g. 24170104) or an entry job_id (32 hex characters), got {value!r}")
+
+
 # Subcommands working on the entries; their PIPELINE_ENTRIES are loaded for all
 # processing units at once and refreshed from SLURM with one batched query.
 ENTRY_SUBCOMMANDS = ("status", "retire", "cancel", "log")
@@ -43,9 +55,9 @@ def main():
         description="laupy pipeline management tool: status and lifecycle of the scheduled SLURM jobs (entries) of pipelines.",
         epilog="Common options (-d, -w, --slurm-dir, -p, --dry-run, --verbose) may be given before or after the subcommand.",
     )
-    add_common_arguments(parser, dry_run_help="Only print what create/clean/delete would do")
+    add_common_arguments(parser, dry_run_help="Only print what create/clean/delete/retire/cancel would do, change nothing")
     common = argparse.ArgumentParser(add_help=False)
-    add_common_arguments(common, suppress_defaults=True, dry_run_help="Only print what create/clean/delete would do")
+    add_common_arguments(common, suppress_defaults=True, dry_run_help="Only print what create/clean/delete/retire/cancel would do, change nothing")
     subparsers = parser.add_subparsers(dest="subcommand", title="subcommands", metavar="{create,clean,delete,status,log,retire,cancel}", required=True)
     # pipeline directory management
     subparsers.add_parser("create", parents=[common], help="Create the pipeline directory structure (pipeline/log) in each processing unit; submission also does this implicitly")
@@ -68,13 +80,13 @@ def main():
     default=["FAILED", "CANCELLED", "TIMEOUT"],
     help="SLURM job states that trigger retirement (default: FAILED, CANCELLED, TIMEOUT)")
     retire_range.add_argument("--all", action="store_true", help="Mark all non-retired jobs as retired, filtered by --state")
-    retire_range.add_argument("--job", nargs="+", type=str, help="Mark specific job IDs as retired (e.g. --job 123 456 789)")
+    retire_range.add_argument("--job", nargs="+", type=parse_job_id, metavar="ID", help="Retire specific jobs by SLURM job ID or entry job_id, space-separated (e.g. --job 24170103 24170106)")
     retire_range.add_argument("--step", nargs="+", type=int, help="Mark specific pipeline steps as retired (e.g. --step 1 2 3)")
     # cancel action for cancelling jobs
     cancel_parser = subparsers.add_parser("cancel", parents=[common], help="Cancel active jobs of the pipeline entries")
     cancel_range = cancel_parser.add_mutually_exclusive_group()
     cancel_range.add_argument("--all", action="store_true", help="Cancel all non-retired jobs, filtered by --state")
-    cancel_range.add_argument("--job", nargs="+", type=str, help="Cancel specific job IDs (e.g. --job 123 456 789)")
+    cancel_range.add_argument("--job", nargs="+", type=parse_job_id, metavar="ID", help="Cancel specific jobs by SLURM job ID or entry job_id, space-separated (e.g. --job 24170104 24170107)")
     cancel_range.add_argument("--step", nargs="+", type=int, help="Cancel specific pipeline steps (e.g. --step 1 2 3)")
     cancel_parser.add_argument("--state", nargs="+",
     choices=["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"],
@@ -164,10 +176,14 @@ def main():
                 # Only failure states are ever retired, whatever --state lists.
                 retire_states = [state for state in ARG.state if state in RETIRABLE_STATES]
                 candidates = select_pipeline_entries(PIPELINE_ENTRIES, retire_states, job_ids=ARG.job, steps=ARG.step)
-                retired = retire_pipeline_entries(PIPELINE_ENTRIES, [entry["job_id"] for entry in candidates], reason="pipeline retire")
-                output_lines = [f"{SUBDIR_REL} pipeline retire:"]
-                for entry in retired:
-                    output_lines.append(colored(f"{job_basic_info(entry)} -> Marked as retired", "red"))
+                output_lines = [f"{SUBDIR_REL} pipeline retire{' (dry run)' if ARG.dry_run else ''}:"]
+                if ARG.dry_run:
+                    for entry in candidates:
+                        output_lines.append(f"{job_basic_info(entry)} -> Would be retired")
+                else:
+                    retired = retire_pipeline_entries(PIPELINE_ENTRIES, [entry["job_id"] for entry in candidates], reason="pipeline retire")
+                    for entry in retired:
+                        output_lines.append(colored(f"{job_basic_info(entry)} -> Marked as retired", "red"))
                 if len(output_lines) > 1:
                     print("\n".join(output_lines))
         if ARG.subcommand == "cancel":
@@ -177,6 +193,13 @@ def main():
                 # Only active states are ever cancelled, whatever --state lists.
                 cancel_states = [state for state in ARG.state if state in CANCELLABLE_STATES]
                 candidates = select_pipeline_entries(PIPELINE_ENTRIES, cancel_states, job_ids=ARG.job, steps=ARG.step)
+                if ARG.dry_run:
+                    output_lines = [f"{SUBDIR_REL} pipeline cancel (dry run):"]
+                    for entry in candidates:
+                        output_lines.append(f"{job_basic_info(entry)} -> Would be cancelled")
+                    if len(output_lines) > 1:
+                        print("\n".join(output_lines))
+                    continue
                 # SLURM info was refreshed above for all processing units, no need to query it again.
                 results = cancel_pipeline_entries(PIPELINE_ENTRIES, [entry["job_id"] for entry in candidates], refresh=False)
                 output_lines = [f"{SUBDIR_REL} pipeline cancel:"]
@@ -245,6 +268,8 @@ def main():
                 print(f"{SUBDIR_REL}: Deleting {PIPELINE_DIR} (entries, scripts and logs)")
                 remove_pipeline_dir(PIPELINE_DIR)
 
+    if pipeline_entries_store is not None and ARG.dry_run and ARG.subcommand in ("retire", "cancel"):
+        pipeline_entries_store = None  # dry run: write nothing, not even refreshed SLURM info
     if pipeline_entries_store is not None:
         # Writes only processing units whose entries changed (retired/cancelled flags or
         # refreshed slurm_info, which spares SLURM queries next time).
