@@ -4,10 +4,10 @@ import os
 import sys
 import argparse
 from termcolor import colored
-from laupy.cli import add_common_arguments, print_arguments, resolve_layout
-from laupy.entries import (RETIRABLE_STATES, CANCELLABLE_STATES, EntriesStore, entry_slurm_id,
-                           select_entries, retire_entries, cancel_entries)
-from laupy.flow import load_entries, clean_entries, remove_pipeline_dir
+from laupy.cli import add_common_arguments, print_arguments, resolve_directory_tree
+from laupy.pipeline_entries import (RETIRABLE_STATES, CANCELLABLE_STATES, PipelineEntriesStore, entry_slurm_id,
+                           select_pipeline_entries, retire_pipeline_entries, cancel_pipeline_entries)
+from laupy.flow import load_pipeline_entries, clean_pipeline_entries, remove_pipeline_dir
 
 import logging
 # Create a logger specific to this module
@@ -33,8 +33,8 @@ def job_basic_info(entry, state=None):
             f"State: {state or slurm_info.get('State', 'UNKNOWN')}")
 
 
-# Subcommands working on the entries; their ENTRIES are loaded for all
-# execution units at once and refreshed from SLURM with one batched query.
+# Subcommands working on the entries; their PIPELINE_ENTRIES are loaded for all
+# processing units at once and refreshed from SLURM with one batched query.
 ENTRY_SUBCOMMANDS = ("status", "retire", "cancel", "log")
 
 
@@ -48,7 +48,7 @@ def main():
     add_common_arguments(common, suppress_defaults=True, dry_run_help="Only print what create/clean/delete would do")
     subparsers = parser.add_subparsers(dest="subcommand", title="subcommands", metavar="{create,clean,delete,status,log,retire,cancel}", required=True)
     # pipeline directory management
-    subparsers.add_parser("create", parents=[common], help="Create the pipeline directory structure (pipeline/log) in each execution unit; submission also does this implicitly")
+    subparsers.add_parser("create", parents=[common], help="Create the pipeline directory structure (pipeline/log) in each processing unit; submission also does this implicitly")
     subparsers.add_parser("clean", parents=[common], help="Forget all entries in pipeline/dag.json (job history is lost, log files are kept)")
     subparsers.add_parser("delete", parents=[common], help="Delete pipeline/ with its entries and logs (job history is lost; other subdirectories are kept)")
     # log action for showing SLURM logs for a specific pipeline step or job ID
@@ -87,38 +87,40 @@ def main():
             ARG.all = True  # Default to retiring all if no specific range is provided
     if ARG.verbose:
         print_arguments(ARG)
-    layout = resolve_layout(ARG)
+    directory_tree = resolve_directory_tree(ARG)
+    if ARG.verbose:
+        print(f"ROOT DIR: {directory_tree.root}")
 
-    store = None
+    pipeline_entries_store = None
     if ARG.subcommand in ENTRY_SUBCOMMANDS:
-        store = EntriesStore([processing_unit_subdir.abs for processing_unit_subdir in layout.units], topological_sort=(ARG.subcommand == "status"))
+        pipeline_entries_store = PipelineEntriesStore([processing_unit_subdir.abs for processing_unit_subdir in directory_tree.processing_unit_subdirs], topological_sort=(ARG.subcommand == "status"))
         if ARG.subcommand == "status":
-            store.refresh(update_retired=ARG.show_retired, update_negative_step=True, filter_terminal_states=True)
+            pipeline_entries_store.refresh(update_retired=ARG.show_retired, update_negative_step=True, filter_terminal_states=True)
         elif ARG.subcommand in ("retire", "cancel"):
             # Entries stored in a final state cannot change any more; query only the others.
-            store.refresh(update_retired=False, update_negative_step=True, filter_terminal_states=True)
+            pipeline_entries_store.refresh(update_retired=False, update_negative_step=True, filter_terminal_states=True)
         elif ARG.subcommand == "log":
             def matches(entry):
                 return ARG.id in (str(entry.get("job_id", "")), str(entry.get("slurm_id", "")))
-            store.refresh(select=lambda subdir_abs, ENTRIES: [entry for entry in ENTRIES if matches(entry)])
+            pipeline_entries_store.refresh(select=lambda subdir_abs, PIPELINE_ENTRIES: [entry for entry in PIPELINE_ENTRIES if matches(entry)])
         if ARG.verbose:
             from laupy.slurm import QUERY_COUNTS
             print(f"SLURM queries: {QUERY_COUNTS}")
 
-    for processing_unit_subdir in layout.units:
+    for processing_unit_subdir in directory_tree.processing_unit_subdirs:
         if ARG.verbose:
             print(f"Processing {processing_unit_subdir.rel} (abs: {processing_unit_subdir.abs})")
         SUBDIR_ABS = processing_unit_subdir.abs
         SUBDIR_REL = processing_unit_subdir.rel
         PIPELINE_DIR = os.path.join(SUBDIR_ABS, "pipeline")
         PIPELINE_LOG_DIR = os.path.join(PIPELINE_DIR, "log")
-        ENTRIES = store[SUBDIR_ABS] if store is not None else None
+        PIPELINE_ENTRIES = pipeline_entries_store[SUBDIR_ABS] if pipeline_entries_store is not None else None
         if ARG.subcommand == "status":
-            if len(ENTRIES) == 0:
+            if len(PIPELINE_ENTRIES) == 0:
                 print(f"No pipeline entries found for {SUBDIR_REL}.")
             else:
                 output_lines = [f"{SUBDIR_REL} pipeline status:"]
-                for entry in ENTRIES:
+                for entry in PIPELINE_ENTRIES:
                     dag_node_name = entry.get("dag_node_name", None)
                     step = entry.get("step", "N/A")
                     slurm_id = entry.get("slurm_id", None)
@@ -156,27 +158,27 @@ def main():
                 if len(output_lines) > 1:
                     print("\n".join(output_lines))
         if ARG.subcommand == "retire":
-            if len(ENTRIES) == 0:
+            if len(PIPELINE_ENTRIES) == 0:
                 print(f"No pipeline entries found for {SUBDIR_REL}.")
             else:
                 # Only failure states are ever retired, whatever --state lists.
                 retire_states = [state for state in ARG.state if state in RETIRABLE_STATES]
-                candidates = select_entries(ENTRIES, retire_states, job_ids=ARG.job, steps=ARG.step)
-                retired = retire_entries(ENTRIES, [entry["job_id"] for entry in candidates], reason="pipeline retire")
+                candidates = select_pipeline_entries(PIPELINE_ENTRIES, retire_states, job_ids=ARG.job, steps=ARG.step)
+                retired = retire_pipeline_entries(PIPELINE_ENTRIES, [entry["job_id"] for entry in candidates], reason="pipeline retire")
                 output_lines = [f"{SUBDIR_REL} pipeline retire:"]
                 for entry in retired:
                     output_lines.append(colored(f"{job_basic_info(entry)} -> Marked as retired", "red"))
                 if len(output_lines) > 1:
                     print("\n".join(output_lines))
         if ARG.subcommand == "cancel":
-            if len(ENTRIES) == 0:
+            if len(PIPELINE_ENTRIES) == 0:
                 print(f"No pipeline entries found for {SUBDIR_REL}.")
             else:
                 # Only active states are ever cancelled, whatever --state lists.
                 cancel_states = [state for state in ARG.state if state in CANCELLABLE_STATES]
-                candidates = select_entries(ENTRIES, cancel_states, job_ids=ARG.job, steps=ARG.step)
-                # SLURM info was refreshed above for all units, no need to query it again.
-                results = cancel_entries(ENTRIES, [entry["job_id"] for entry in candidates], refresh=False)
+                candidates = select_pipeline_entries(PIPELINE_ENTRIES, cancel_states, job_ids=ARG.job, steps=ARG.step)
+                # SLURM info was refreshed above for all processing units, no need to query it again.
+                results = cancel_pipeline_entries(PIPELINE_ENTRIES, [entry["job_id"] for entry in candidates], refresh=False)
                 output_lines = [f"{SUBDIR_REL} pipeline cancel:"]
                 for result in results:
                     entry = result["entry"]
@@ -189,7 +191,7 @@ def main():
                 if len(output_lines) > 1:
                     print("\n".join(output_lines))
         if ARG.subcommand == "log":
-            selected = [entry for entry in ENTRIES if ARG.id in (str(entry.get("job_id", "")), str(entry.get("slurm_id", "")))]
+            selected = [entry for entry in PIPELINE_ENTRIES if ARG.id in (str(entry.get("job_id", "")), str(entry.get("slurm_id", "")))]
             if not ARG.stdout and not ARG.stderr:
                 ARG.stdout = True
                 ARG.stderr = True
@@ -229,11 +231,11 @@ def main():
                     os.makedirs(PIPELINE_LOG_DIR, exist_ok=True)
         if ARG.subcommand == "clean":
             # Forget the entries, e.g. to resolve failed dependencies, without touching scripts or logs
-            count = len(load_entries(SUBDIR_ABS))
+            count = len(load_pipeline_entries(SUBDIR_ABS))
             action = "Would clean" if ARG.dry_run else "Cleaning"
             print(f"{SUBDIR_REL}: {action} pipeline/dag.json ({count} entries)")
             if not ARG.dry_run:
-                clean_entries(SUBDIR_ABS)
+                clean_pipeline_entries(SUBDIR_ABS)
         if ARG.subcommand == "delete":
             if not os.path.isdir(PIPELINE_DIR):
                 print(f"{SUBDIR_REL}: no pipeline directory")
@@ -243,13 +245,13 @@ def main():
                 print(f"{SUBDIR_REL}: Deleting {PIPELINE_DIR} (entries, scripts and logs)")
                 remove_pipeline_dir(PIPELINE_DIR)
 
-    if store is not None:
-        # Writes only units whose entries changed (retired/cancelled flags or
+    if pipeline_entries_store is not None:
+        # Writes only processing units whose entries changed (retired/cancelled flags or
         # refreshed slurm_info, which spares SLURM queries next time).
         try:
-            saved = store.save()
+            saved = pipeline_entries_store.store()
             if ARG.verbose:
-                print(f"Saved entries of {len(saved)} execution unit(s)")
+                print(f"Saved entries of {len(saved)} processing unit(s)")
         except OSError as e:
             if ARG.subcommand in ("retire", "cancel"):
                 print(f"Error: cannot save pipeline entries: {e}", file=sys.stderr)

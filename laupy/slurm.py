@@ -41,7 +41,7 @@ def normalize_state(state: str) -> str:
 
 # Batched queries: job IDs are deduplicated and sent in chunks of this size
 # (one sacct/squeue process per chunk, independent of how many entries or
-# execution units they come from).
+# processing units they come from).
 QUERY_CHUNK_SIZE = 500
 # Number of sacct/squeue processes started by this module, for diagnostics.
 QUERY_COUNTS = {"sacct": 0, "squeue": 0}
@@ -200,7 +200,7 @@ def get_active_slurmids(dependency_entries, raise_on_fail=False):
     active_ids = []
     for entry in dependency_entries:
         slurm_id = entry["slurm_id"]
-        job_name = entry.get("job_name", "UNKNOWN")
+        job_name = entry.get("job_name") or entry.get("script_name") or f"node {entry.get('dag_node_name', '?')}"
         status = entry.get("slurm_info", {}).get("State", "UNKNOWN")
         if status in ACTIVE_STATES:
             active_ids.append(slurm_id)

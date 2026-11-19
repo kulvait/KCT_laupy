@@ -61,10 +61,10 @@ pip install --user --upgrade --editable .
 ```
 ## Design Concepts
  
-### Execution Units, Entries and the DAG
+### Processing Units, Entries and the DAG
 
-- **Execution unit**: one dataset directory below a working directory (e.g. `wd/17k_sample`); scripts run per execution unit.
-- **ENTRIES**: the scheduled jobs of an execution unit, stored in `<execution unit>/pipeline/dag.json`.
+- **Processing unit**: one dataset directory below a working directory (e.g. `wd/17k_sample`); scripts run per processing unit.
+- **PIPELINE_ENTRIES**: the scheduled jobs of a processing unit, stored in `<processing unit>/pipeline/dag.json`.
   Each entry currently corresponds to one SLURM job and has its own identity (`job_id`, `slurm_id`), its last known SLURM state (`slurm_info`) and lifecycle flags (`retired`, `retired_by`, `retired_reason`).
 - **DAG**: the directed acyclic graph of logical nodes (`dag_node_name`, `dag_node_deps`) that entries are attached to.
 
@@ -81,24 +81,22 @@ This preserves dependency correctness at the node level while keeping full obser
 ### Package Structure
 
 - **`flow.py`**  
-  ENTRIES persistence, SLURM refresh, DAG construction and job scheduling.  
+  PIPELINE_ENTRIES persistence, SLURM refresh, DAG construction and job scheduling.  
   Important functions include:
-  - `load_entries(...)` / `save_entries(...)` / `clean_entries(...)` – read, atomically write and forget the ENTRIES of an execution unit
-  - `update_entries(...)` – refresh `slurm_info` of ENTRIES from SLURM
+  - `load_pipeline_entries(...)` / `store_pipeline_entries(...)` / `clean_pipeline_entries(...)` – read, atomically write and forget the PIPELINE_ENTRIES of a processing unit
+  - `update_pipeline_entries(...)` – refresh `slurm_info` of PIPELINE_ENTRIES from SLURM
   - `constructDAG(...)`, `schedule_slurm_job(...)`, `resubmit_slurm_job(...)`
 
-  The former names `load_dag`, `save_dag`, `clean_dag` and `update_dag_entries` remain as aliases.
-
-- **`entries.py`**  
-  Lifecycle of ENTRIES shared by the CLIs and lautools-browser: `select_entries`, `retire_entries`, `cancel_entries` and
-  `EntriesStore`, which holds the ENTRIES of many execution units, refreshes them from SLURM with one batched query and
-  saves only changed units, merged with concurrent changes on disk.
+- **`pipeline_entries.py`**  
+  Lifecycle of PIPELINE_ENTRIES shared by the CLIs and lautools-browser: `select_pipeline_entries`, `retire_pipeline_entries`, `cancel_pipeline_entries` and
+  `PipelineEntriesStore`, which holds the PIPELINE_ENTRIES of many processing units, refreshes them from SLURM with one batched query and
+  saves only changed processing units, merged with concurrent changes on disk.
 
 - **`cli.py`**  
-  Option parsing and execution unit discovery shared by `pipeline` and `submitslurm`.
+  Option parsing and processing unit discovery shared by `pipeline` and `submitslurm`.
 
 - **`slurm.py`**  
-  SLURM-facing execution integration layer (submission/tracking helpers used by pipeline execution units).
+  SLURM-facing execution integration layer (submission/tracking helpers used by pipeline processing units).
   Job queries are batched: IDs are deduplicated and sent in chunks of `QUERY_CHUNK_SIZE` per `sacct`/`squeue` call.
 
 - **`graph_utils.py`**  
@@ -187,10 +185,10 @@ In the current model, entries correspond to SLURM jobs and carry fields such as 
 
 #### What `pipeline` does
 
-- loads the entries of all selected execution units (`EntriesStore`)
+- loads the entries of all selected processing units (`PipelineEntriesStore`)
 - refreshes their status from SLURM with one batched query; entries already in a final state are not queried again
-- persists state changes and refreshed status, only for execution units that changed (`save_entries`)
-- can forget entries (`clean_entries`)
+- persists state changes and refreshed status, only for processing units that changed (`store_pipeline_entries`)
+- can forget entries (`clean_pipeline_entries`)
 - supports selective operations across one or more working directories
 
 #### Key behavior from implementation
