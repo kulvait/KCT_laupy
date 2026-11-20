@@ -154,20 +154,31 @@ def main():
             node_list = list(set(node_list).intersection(set(gpu_nodes)))
         else:
             node_list = gpu_nodes
+    node_selection_requested = bool(ARG.nodelist or ARG.excellent_nodes or ARG.strong_nodes or ARG.gpu_nodes)
     if len(node_list) > 0 or len(excluded_node_list) > 0:
-        live_nodes = maxwell.get_live_nodes(partition=ARG.partition, idle_only=False)
-        if len(node_list) > 0:
-            node_list = list(set(node_list).intersection(set(live_nodes)))
-            SLURM_ARGS_LIST.append(f"--nodelist={','.join(node_list)}")
-        if len(excluded_node_list) > 0:
-            excluded_node_list = list(set(excluded_node_list).intersection(set(live_nodes)))
-            SLURM_ARGS_LIST.append(f"--exclude={','.join(excluded_node_list)}")
+        live_nodes = set(maxwell.get_live_nodes(partition=ARG.partition, idle_only=False))
+        node_list = sorted(set(node_list).intersection(live_nodes))
+        excluded_node_list = sorted(set(excluded_node_list).intersection(live_nodes))
+    # Never pass an empty --nodelist=/--exclude=, sbatch rejects it
+    if node_list:
+        SLURM_ARGS_LIST.append(f"--nodelist={','.join(node_list)}")
+    elif node_selection_requested:
+        if ARG.nodelist or ARG.gpu_nodes:
+            # An explicit node list or GPU request must not silently run elsewhere
+            what = "--nodelist" if ARG.nodelist else "--gpu-nodes"
+            print(f"No available nodes match {what} in partition {ARG.partition}, not submitting.", file=sys.stderr)
+            sys.exit(1)
+        print(f"No available nodes match the requested node class in partition {ARG.partition}. Submitting without node restrictions.")
+    if excluded_node_list:
+        SLURM_ARGS_LIST.append(f"--exclude={','.join(excluded_node_list)}")
 
     if ARG.verbose:
-        if len(node_list) == 0:
-            print("No valid nodes found based on the specified criteria. Submitting without node restrictions.")
-        else:
+        if node_list:
             print(f"Submitting to nodes: {','.join(node_list)}")
+        elif not node_selection_requested:
+            print("Submitting without node restrictions.")
+        if excluded_node_list:
+            print(f"Excluding nodes: {','.join(excluded_node_list)}")
 
     if ARG.oversubscribe:
         SLURM_ARGS_LIST.append("--oversubscribe")

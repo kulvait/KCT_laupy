@@ -85,6 +85,8 @@ def init_node_cache():
 	global WEAK_CPU_NODES
 	if _node_cache is None:
 		_node_cache = parse_maxwell_tsv(maxwell_tsv_path)
+		ALL_NODES = []
+		GPU_NODES = []
 		EXCELLENT_NODES = []
 		EXCELLENT_GPU_NODES = []
 		EXCELLENT_CPU_NODES = []
@@ -280,7 +282,6 @@ def main():
 # For nodes not in gpuall we list CPU architectures
 	cpu_nodes = []
 	for node in maxwell_nodes:
-		node_name = node['Host']
 		if 'allgpu' not in node['Partitions']:
 			cpu_nodes.append(node)
 

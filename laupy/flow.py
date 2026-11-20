@@ -345,20 +345,28 @@ def resubmit_slurm_job(PIPELINE_ENTRIES: list, entry_id: Union[str, int, Dict], 
 
 	entry_id: the entry dict, its slurm_id (int, or str of digits) or its job_id (str).
 	Returns the new entry; the caller appends it to PIPELINE_ENTRIES and saves them.
-	Returns None (after logging the reason) if the entry is not found or resubmission fails.
+	Returns None (after logging the reason) if the entry is not found, is already retired,
+	or resubmission fails.
 	"""
 	if isinstance(entry_id, dict):
 		# Use the entry inside PIPELINE_ENTRIES (the dict passed may be a copy, e.g. from a UI)
 		ENTRY = next((entry for entry in PIPELINE_ENTRIES if entry.get("job_id") == entry_id.get("job_id")), entry_id)
-	elif isinstance(entry_id, (int, str)):
-		wanted = str(entry_id)
+	elif isinstance(entry_id, (int, str)) and not isinstance(entry_id, bool):
+		wanted = str(entry_id).strip()
+		# Missing IDs never match (otherwise "None" would match entries without slurm_id)
 		ENTRY = next((entry for entry in PIPELINE_ENTRIES
-		              if str(entry.get("job_id")) == wanted or str(entry.get("slurm_id")) == wanted), None)
+		              if (entry.get("job_id") is not None and str(entry["job_id"]) == wanted)
+		              or (entry.get("slurm_id") is not None and str(entry["slurm_id"]) == wanted)), None)
 	else:
 		log.error(f"Cannot resubmit: entry_id must be an entry dict, a SLURM ID or a job_id, got {type(entry_id).__name__}")
 		return None
 	if ENTRY is None:
 		log.error(f"Cannot resubmit: no pipeline entry with job_id or SLURM ID {entry_id}")
+		return None
+	if ENTRY.get("retired", False):
+		# Resubmitting a retired entry would start a second job for the same node
+		log.error(f"Cannot resubmit: entry {ENTRY.get('job_id')} (SLURM ID {ENTRY.get('slurm_id')}) for node "
+		          f"'{ENTRY.get('dag_node_name', '?')}' is already retired ({ENTRY.get('retired_reason', 'no reason given')})")
 		return None
 	try:
 		# First cancel and retire the existing job if it has a valid SLURM ID
@@ -406,10 +414,9 @@ def schedule_slurm_job(PIPELINE_ENTRIES: list, dag_node_or_step_name: str, scrip
 	try:
 		JOB_ID = uuid.uuid4().hex
 		ROOTDIR = os.path.dirname(os.path.dirname(os.path.abspath(processing_unit_subdir)))
-		dag_node_or_step_name = str(dag_node_or_step_name)	# Normalize to string for consistent handling
-		numeric_node = False
+		dag_node_or_step_name = str(dag_node_or_step_name) # Normalize to string for consistent handling
 		negative_node = False
-		SLURM_CMD = slurm_cmd.copy()  # Create a copy of the SLURM command to avoid modifying the original
+		SLURM_CMD = slurm_cmd.copy() # Create a copy of the SLURM command to avoid modifying the original
 		NEW_ENTRY = {}
 		NEW_ENTRY["script_name"] = script_name
 		NEW_ENTRY["job_name"] = job_name
@@ -422,11 +429,11 @@ def schedule_slurm_job(PIPELINE_ENTRIES: list, dag_node_or_step_name: str, scrip
 			step = int(dag_node_or_step_name)
 			NEW_ENTRY["step"] = step
 			NEW_ENTRY["dag_node_deps"] = []  # Numeric nodes do not have explicit
-			numeric_node = True
 			if step < 0:
 				negative_node = True
 		else:
-			NEW_ENTRY["step"] = -2	# Use -2 for named nodes
+			# Use -2 for named nodes, this is not triggered by includeNegativeStepNodes, which only affects step -1 nodes - submitted outside the DAG
+			NEW_ENTRY["step"] = -2
 			NEW_ENTRY["dag_node_deps"] = node_dependencies if node_dependencies else []
 		if not negative_node:
 			DAG = constructDAG(PIPELINE_ENTRIES + [NEW_ENTRY])
