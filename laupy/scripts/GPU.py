@@ -355,7 +355,8 @@ def main_with_discovery(argv=None):
 		if ARG.try_start_server:
 			try:
 				log.info("Trying to start Redis server...")
-				CMD = ["REDIS", "start", "--log"]
+				# REDIS logs by default (timestamped in ./log); start it on the port this pool uses
+				CMD = ["REDIS", "start", "--port", str(ARG.redis_port)]
 				if ARG.kill_unresponsive_server:
 					CMD.append("--kill-unresponsive-server")
 				subprocess.run(CMD, check=True)

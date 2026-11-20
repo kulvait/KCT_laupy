@@ -81,6 +81,7 @@ def port_owners(port):
 # Limits for the quick checks of a Redis server (is it there, does it answer, what is its configuration)
 PROBE_CONNECT_TIMEOUT = 1	# Seconds to establish the TCP connection
 PROBE_TIMEOUT = 3	# Seconds to wait for each reply
+SAVE_TIMEOUT = 60	# Seconds to wait for SAVE (stop --dump), which blocks until the RDB file is written
 
 def probe_client(host, port):
 	"""Redis client for quick checks of a server that may be hung; every call fails after PROBE_TIMEOUT seconds.
@@ -102,16 +103,43 @@ def ping(host, port):
 	except (redis.ConnectionError, redis.TimeoutError):
 		return False
 
+def port_accepts_connections(host, port):
+	"""True if something accepts TCP connections on host:port (whoever owns it)."""
+	try:
+		with socket.create_connection((host, port), timeout=PROBE_CONNECT_TIMEOUT):
+			return True
+	except OSError:
+		return False
+
 def describe_port(host, port, verbose=False):
-	"""Report listeners, ownership, and Redis responsiveness of host:port."""
+	"""Report listeners, ownership, and Redis responsiveness of host:port.
+
+	port_state: "free", "redis" (a responsive Redis listens) or "occupied". owner_unknown is True when
+	something listens but its process is not visible (another user's process: without root, neither
+	psutil nor ss shows its PID); a connection test tells such a port from a free one.
+	"""
 	description = {}
 	description["port"] = port
 	description["owners"] = port_owners(port)
 	description["redis_on_port"] = False
 	description["redis_is_responsive"] = False
+	description["owner_unknown"] = False
 	if description["owners"] == {}:
-		description["port_state"] = "free"
-		print(f"Port {port}: no identifiable listening process.")
+		if not port_accepts_connections(host, port):
+			description["port_state"] = "free"
+			print(f"Port {port}: no identifiable listening process.")
+			return description
+		# Occupied by a process we can not see (another user's); a responsive Redis there is usable
+		description["owner_unknown"] = True
+		description["redis_is_responsive"] = ping(host, port)
+		description["redis_on_port"] = description["redis_is_responsive"]
+		if description["redis_is_responsive"]:
+			description["redis_pid"] = server_pid(host, port)
+			description["port_state"] = "redis"
+			print(f"Port {port}: responsive Redis of another user (PID {description['redis_pid']}).")
+		else:
+			description["port_state"] = "occupied"
+			print(f"Port {port}: occupied by a process of another user (owner not visible), not a responsive Redis.")
 		return description
 	description["port_state"] = "occupied"
 	for pid, info in description["owners"].items():
@@ -152,21 +180,6 @@ def find_executable(name_or_path: str) -> str:
 	if p is None:
 		raise RedisLifecycleError(f"Executable not found in PATH: {name_or_path}")
 	return str(Path(p).resolve())
-
-def default_pidfile(port, log_dir):
-	# Isolate instances belonging to different Slurm jobs.
-	job_id = os.environ.get("SLURM_JOB_ID", "local")
-	return Path("/tmp") / (f"laupy-gpu-{os.getuid()}-{job_id}-{port}.pid")
-
-def default_logfile(port, log_dir):
-	job_id = os.environ.get("SLURM_JOB_ID", "local")
-	timestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
-	return Path(log_dir) / (f"laupy-gpu-{timestamp}-{job_id}-{port}.log")
-
-def default_dump_rdb(port, log_dir):
-	job_id = os.environ.get("SLURM_JOB_ID", "local")
-	timestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
-	return Path(log_dir) / (f"laupy-gpu-{timestamp}-{job_id}-{port}.rdb")
 
 def pidfile_pid(pidfile):
 	try:
@@ -246,27 +259,21 @@ class RedisManager:
 		self.ARG = ARG
 		self.host = ARG.host
 		self.port = ARG.port
-		self.pidfile = Path(ARG.pidfile).resolve()
-		self.logfile = None
 		self.redis_server_exe = find_executable(ARG.redis_server)
-		self.log_dir = Path(self.ARG.log_dir).resolve()
-		# Timestamped log in the log dir by default (logs of several runs/nodes may end up in one place);
-		# --no-log disables logging
-		self.logfile = None if ARG.no_log else default_logfile(self.port, self.log_dir)
-		self.dump_rdb = default_dump_rdb(self.port, self.log_dir)
-
-	def init(self):
-		"""Check prerequisites and prepare runtime directories."""
-		self.pidfile.parent.mkdir(parents=True, exist_ok=True)
-		if self.logfile:
-			self.logfile.parent.mkdir(parents=True, exist_ok=True)
-		print(f"Redis executable: {self.redis_server_exe}")
-		print(f"Redis endpoint:   {self.host}:{self.port}")
-		print(f"PID file:		  {self.pidfile}")
-		if self.logfile:
-			print(f"Log file:		  {self.logfile}")
+		# File names carry the SLURM job and the port, so instances of different jobs on one node do not collide
+		job_id = os.environ.get("SLURM_JOB_ID", "local")
+		self.job_id = job_id
+		# PID file in /tmp: node-local, keeps the work directory clean, and other instances can look for
+		# laupy-gpu-* files there; the UID separates users
+		if ARG.pidfile:
+			self.pidfile = Path(ARG.pidfile).resolve()
 		else:
-			print("Log file:		  none (--no-log)")
+			self.pidfile = Path("/tmp") / f"laupy-gpu-{os.getuid()}-{job_id}-{self.port}.pid"
+		# Log and dump are timestamped: files of several runs and nodes may end up in the same log dir
+		self.log_dir = Path(ARG.log_dir).resolve()
+		timestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
+		self.logfile = None if ARG.no_log else self.log_dir / f"laupy-gpu-{timestamp}-{job_id}-{self.port}.log"
+		self.dump_rdb = self.log_dir / f"laupy-gpu-{timestamp}-{job_id}-{self.port}.rdb"
 
 	def status(self):
 		# Figure out if PID file exists and what it points to.
@@ -282,7 +289,10 @@ class RedisManager:
 		elif description["redis_on_port"]:
 			process_pid = description.get("redis_pid", None)
 			process_pidfile = description.get("redis_pidfile", None)
-			process_executable = Path(f"/proc/{process_pid}/exe").resolve() if process_pid else None
+			if description["owner_unknown"]:
+				process_executable = "not visible (another user's process)"
+			else:
+				process_executable = Path(f"/proc/{process_pid}/exe").resolve() if process_pid else None
 			if description["redis_is_responsive"]:
 				print(f"{self.host}:{self.port} - responsive Redis server PID {process_pid}, path: {process_executable}.")
 			else:
@@ -298,6 +308,9 @@ class RedisManager:
 						log.warning(f"Managed PID file {self.pidfile} does not match the Redis server's PID file {process_pidfile}. This may indicate a configuration mismatch or multiple Redis instances.")
 					if process_pidfile is None:
 						log.warning(f"Redis server on port {self.port} does not report a PID file, but the managed PID file {self.pidfile} exists. This may indicate a configuration mismatch or multiple Redis instances.")
+		elif description["owner_unknown"]:
+			print(f"{self.host}:{self.port} - port is occupied by a process of another user (not visible), "
+			      "which is not a responsive Redis.")
 		else:
 			print(f"{self.host}:{self.port} - port is occupied by non-Redis processes:")
 			for pid in description["owners"]:
@@ -316,13 +329,35 @@ class RedisManager:
 				pass
 
 	def start(self):
-		self.init()
+		# start --dry-run only shows the configuration; restart has no --dry-run, hence getattr
+		dry_run = getattr(self.ARG, "dry_run", False)
+		print(f"Redis executable: {self.redis_server_exe}")
+		print(f"Redis endpoint:   {self.host}:{self.port}")
+		if dry_run:
+			print("Without --dry-run, start would create these files:")
+		print(f"PID file:		  {self.pidfile}")
+		if self.logfile:
+			print(f"Log file:		  {self.logfile}")
+		else:
+			print("Log file:		  none (--no-log)")
+		# The dump name is timestamped when stop --dump runs, so only its pattern is known here
+		print(f"Dump file:		  {self.log_dir}/laupy-gpu-<time of stop>-{self.job_id}-{self.port}.rdb "
+		      "(written only by stop --dump)")
+		if dry_run:
+			return
+		self.pidfile.parent.mkdir(parents=True, exist_ok=True)
+		if self.logfile:
+			self.logfile.parent.mkdir(parents=True, exist_ok=True)
 		description = describe_port(self.host, self.port)
 		if description["port_state"] == "redis":
 			print(f"Redis is already running on port {self.port}; skipping start.")
 			return
 		if description["port_state"] == "occupied":
 			owners = description["owners"]
+			if description["owner_unknown"]:
+				# Nothing we may kill, and a server started now could not bind the port
+				raise RuntimeError(f"Port {self.port} is held by a process of another user (not visible), "
+				                   "which is not a responsive Redis. Use another --port.")
 			if not self.ARG.kill_unresponsive_server:
 				raise RuntimeError(f"Port {self.port} is occupied. Use status to inspect the instance, or --kill-unresponsive-server to permit recovery.")
 			for pid, info in owners.items():
@@ -355,13 +390,10 @@ class RedisManager:
 			)
 		# Remove a stale PID file.
 		self.pidfile.unlink(missing_ok=True)
-		# Remove dummp.rdb if it exists, to avoid Redis loading an old state.
-		dump_file = Path("dump.rdb")
-		if dump_file.exists():
-			print(f"Removing existing dump file: {dump_file}")
-			dump_file.unlink()
+		# No old state can be loaded: persistence is off (--save "", --appendonly no) and --dbfilename is
+		# timestamped, so Redis never finds an existing file of that name in its working directory.
 		cmd = [
-			self.redis_server_exe,	# The resolved binary that init() reports
+			self.redis_server_exe,	# The resolved binary that start() reports
 			"--bind", self.host,
 			"--port", str(self.port),
 			"--daemonize", "yes",
@@ -419,46 +451,38 @@ class RedisManager:
 			print("Removed stale PID file.")
 			return
 		actual_pid = server_pid(self.host, self.port)
+		if actual_pid is None:
+			raise RuntimeError(
+				f"Redis on {self.host}:{self.port} does not respond (its PID {pid} from {self.pidfile} is "
+				"still running). Use stop --force to kill it."
+			)
 		if actual_pid != pid:
 			raise RuntimeError(
 				f"Refusing to stop: PID file says {pid}, "
 				f"but Redis on {self.host}:{self.port} reports "
 				f"{actual_pid}. Check the port and PID file."
 			)
-		# NOSAVE prevents a final RDB save during shutdown.
 		if self.ARG.dump:
 			# SAVE writes <dir>/<dbfilename> of the running server (dir is its working directory, it can not
 			# be changed at runtime in Redis >= 7), so ask where that is and move the file to the log dir.
-			rs = probe_client(self.host, self.port)	# Only CONFIG GET here; SAVE itself runs through redis-cli
-			saved = Path(rs.config_get("dir")["dir"]) / rs.config_get("dbfilename")["dbfilename"]
-			print(f"Dumping Redis database to {self.dump_rdb} before shutdown.")
-			result = subprocess.run(
-				[
-					self.ARG.redis_cli,
-					"-h", self.host,
-					"-p", str(self.port),
-					"SAVE",
-				],
-				capture_output=True,
-				text=True,
-				timeout=60,
-			)
-			if result.returncode != 0 or result.stdout.strip() != "OK":
-				raise RuntimeError(f"SAVE failed, Redis not stopped: {(result.stderr or result.stdout).strip()}")
+			try:
+				rs = probe_client(self.host, self.port)
+				saved = Path(rs.config_get("dir")["dir"]) / rs.config_get("dbfilename")["dbfilename"]
+				print(f"Dumping Redis database to {self.dump_rdb} before shutdown.")
+				# SAVE blocks until the file is written, which takes longer than a probe on a big database
+				redis.Redis(host=self.host, port=self.port, socket_connect_timeout=PROBE_CONNECT_TIMEOUT,
+				            socket_timeout=SAVE_TIMEOUT, retry=Retry(NoBackoff(), 0)).save()
+			except redis.RedisError as e:
+				raise RuntimeError(f"SAVE failed, Redis not stopped: {e}")
 			self.dump_rdb.parent.mkdir(parents=True, exist_ok=True)
 			shutil.move(str(saved), str(self.dump_rdb))
 		print(f"Stopping Redis (PID {pid}) on {self.host}:{self.port} ...")
-		subprocess.run(
-			[
-				self.ARG.redis_cli,
-				"-h", self.host,
-				"-p", str(self.port),
-				"SHUTDOWN", "NOSAVE",
-			],
-			stdout=subprocess.DEVNULL,
-			stderr=subprocess.DEVNULL,
-			timeout=5,
-		)
+		try:
+			# NOSAVE prevents a final RDB save during shutdown. redis-py returns once the server closed
+			# the connection, and raises if the server refused or did not answer.
+			probe_client(self.host, self.port).shutdown(nosave=True)
+		except redis.RedisError as e:
+			raise RuntimeError(f"SHUTDOWN failed: {e}. Use stop --force to kill the server.")
 		deadline = time.monotonic() + 10
 		while time.monotonic() < deadline:
 			if not process_exists(pid):
@@ -481,17 +505,18 @@ class RedisManager:
 def main():
 	parser = argparse.ArgumentParser(description="Local hardened Redis lifecycle manager for laupy")
 	subparsers = parser.add_subparsers(dest="action", required=True)
-	for name in ["init", "start", "stop", "restart", "shutdown", "status"]:
+	for name in ["start", "stop", "restart", "shutdown", "status"]:
 		sub = subparsers.add_parser(name, help=f"{name} the Redis instance")
 		sub.add_argument("--host", default="127.0.0.1", help="Redis host, default 127.0.0.1")
 		sub.add_argument("--port", type=int, default=6379)
 		sub.add_argument("--redis-server", default="redis-server", help="Path/name of redis-server binary")
-		sub.add_argument("--redis-cli", default="redis-cli")
-		sub.add_argument("--pidfile", help="Path to PID file; default is /tmp/laupy-gpu-<uid>-<jobid>-<port>.pid")
+		sub.add_argument("--pidfile", help="Path to PID file; default /tmp/laupy-gpu-<uid>-<SLURM job or local>-<port>.pid")
 		sub.add_argument("--no-log", action="store_true", help="Do not write a Redis log (default: timestamped log in --log-dir)")
 		sub.add_argument("--log-dir", default="log")
 		# restart runs stop() and start(), so it needs the options of both
-		if name in ("init", "start", "restart"):
+		if name == "start":
+			sub.add_argument("--dry-run", action="store_true", help="Only print the configuration (executable, endpoint, PID file, log file) and exit")
+		if name in ("start", "restart"):
 			sub.add_argument("--extra-config", nargs=argparse.REMAINDER, default=[], help="Additional Redis options, placed after --extra-config",)
 			sub.add_argument("--kill-unresponsive-server", action="store_true", help="If redis can not start because of the instance which does not respond to pings, kill it and start a new one. Use with caution.",)
 		if name in ("stop", "shutdown", "restart"):
@@ -500,13 +525,9 @@ def main():
 	ARG = parser.parse_args()
 	if not 1 <= ARG.port <= 65535:
 		parser.error("--port must be between 1 and 65535")
-	if not ARG.pidfile:
-		ARG.pidfile = str(default_pidfile(ARG.port, ARG.log_dir))
 	manager = RedisManager(ARG)
 	try:
-		if ARG.action == "init":
-			manager.init()
-		elif ARG.action == "start":
+		if ARG.action == "start":
 			manager.start()
 		elif ARG.action in ("stop", "shutdown"):
 			manager.stop()
