@@ -12,13 +12,15 @@ import socket
 import subprocess
 import sys
 import pwd
-import re
 import signal
 import time
 import logging
 from pathlib import Path
 
+import psutil
 import redis
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 
 # Create a logger specific to this module
 log = logging.getLogger(__name__)
@@ -36,44 +38,72 @@ log.propagate = False  # Prevent log messages from being propagated to the root 
 class RedisLifecycleError(RuntimeError):
 	pass
 
+def user_name(uid):
+	"""User name of a numeric UID; the number itself if the user database (passwd, LDAP/sssd) has no entry."""
+	if uid is None:
+		return "unknown"
+	try:
+		return pwd.getpwuid(uid).pw_name
+	except KeyError:
+		return str(uid)
+
 def port_owners(port):
-	"""Return process details for listeners on a TCP port."""
-	result = subprocess.run(
-		["ss", "-H", "-ltnp", f"sport = :{port}"],
-		capture_output=True,
-		text=True,
-		timeout=3,
-	)
-	if result.returncode != 0:
-		raise RuntimeError(
-			f"Cannot inspect port {port}: {result.stderr.strip()}"
-		)
+	"""Return process details for listeners on a TCP port.
+
+	Uses psutil (no external tool such as ss needed). As with ss, listening processes of other
+	users have no visible PID and are not listed.
+	"""
+	try:
+		connections = psutil.net_connections(kind="tcp")
+	except (psutil.Error, OSError) as e:
+		raise RuntimeError(f"Cannot inspect port {port}: {e}")
 	owners = {}
-	for line in result.stdout.splitlines():
-		for match in re.finditer(r"pid=(\d+)", line):
-			pid = int(match.group(1))
-			try:
-				uid = os.stat(f"/proc/{pid}").st_uid
-				comm = Path(f"/proc/{pid}/comm").read_text().strip()
-			except OSError:
-				uid, comm = None, "unknown"
-			owners[pid] = {
-				"uid": uid,
-				"comm": comm,
-				"command": line.strip(),
-			}
+	for connection in connections:
+		if connection.status != psutil.CONN_LISTEN or not connection.laddr or connection.laddr.port != port:
+			continue
+		pid = connection.pid
+		if pid is None or pid in owners:
+			continue	# Other user's process (not visible), or already listed (IPv4 and IPv6 socket)
+		try:
+			process = psutil.Process(pid)
+			uid = process.uids().effective
+			comm = process.name()
+			command = " ".join(process.cmdline())
+		except (psutil.Error, OSError):
+			uid, comm, command = None, "unknown", ""
+		owners[pid] = {
+			"uid": uid,
+			"comm": comm,
+			"command": command,
+		}
 	return owners
 
+# Limits for the quick checks of a Redis server (is it there, does it answer, what is its configuration)
+PROBE_CONNECT_TIMEOUT = 1	# Seconds to establish the TCP connection
+PROBE_TIMEOUT = 3	# Seconds to wait for each reply
+
+def probe_client(host, port):
+	"""Redis client for quick checks of a server that may be hung; every call fails after PROBE_TIMEOUT seconds.
+
+	A hung Redis (e.g. stopped with SIGSTOP, or stuck) still lets the kernel accept TCP connections, so
+	connecting succeeds and only the reply never comes; socket_timeout bounds that wait. Retries are
+	switched off because redis-py >= 6 retries timed-out commands by default (3 times with growing pauses,
+	about 38 s per call instead of 3 s), which made status and start appear to hang on such a server.
+	Only for checks: a client that waits for work (e.g. BRPOP for a GPU) must not use these timeouts.
+	"""
+	return redis.Redis(host=host, port=port, socket_connect_timeout=PROBE_CONNECT_TIMEOUT,
+	                   socket_timeout=PROBE_TIMEOUT, retry=Retry(NoBackoff(), 0))
+
 def ping(host, port):
-	"""Check if a Redis instance is responsive."""
+	"""Check if a Redis instance is responsive (False after at most PROBE_TIMEOUT seconds)."""
 	try:
-		r = redis.Redis(host=host, port=port, socket_connect_timeout=1)
+		r = probe_client(host, port)
 		return r.ping()
 	except (redis.ConnectionError, redis.TimeoutError):
 		return False
 
-def describe_port(port, redis_cli, verbose=False):
-	"""Report listeners, ownership, and Redis responsiveness."""
+def describe_port(host, port, verbose=False):
+	"""Report listeners, ownership, and Redis responsiveness of host:port."""
 	description = {}
 	description["port"] = port
 	description["owners"] = port_owners(port)
@@ -85,25 +115,21 @@ def describe_port(port, redis_cli, verbose=False):
 		return description
 	description["port_state"] = "occupied"
 	for pid, info in description["owners"].items():
-		owner = (
-			pwd.getpwuid(info["uid"]).pw_name
-			if info["uid"] is not None
-			else "unknown"
-		)
+		owner = user_name(info["uid"])
 		description["owners"][pid]["owner"] = owner
 		description["owners"][pid]["info"] = info
 		description["owners"][pid]["is_redis"] = (info["comm"] == "redis-server")
 		if description["owners"][pid]["is_redis"]:
 			description["redis_pid"] = pid
-			# Try to query pidfile
-			rs = redis.Redis(host="127.0.0.1", port=port, socket_connect_timeout=1)
+			# Try to query pidfile (probe client: a hung server gives up after PROBE_TIMEOUT)
+			rs = probe_client(host, port)
 			try:
 				pidfile = rs.config_get("pidfile").get("pidfile", None)
 				description["owners"][pid]["pidfile"] = pidfile
 				description["redis_pidfile"] = pidfile
 			except (redis.ConnectionError, redis.TimeoutError):
 				description["owners"][pid]["pidfile"] = None
-			description["owners"][pid]["is_responsive_redis"] = ping("127.0.0.1", port)
+			description["owners"][pid]["is_responsive_redis"] = ping(host, port)
 		else:
 			description["owners"][pid]["is_responsive_redis"] = False
 		description["redis_on_port"] |= description["owners"][pid]["is_redis"]
@@ -177,22 +203,42 @@ def proc_identity(pid):
 	try:
 		comm = Path(f"/proc/{pid}/comm").read_text().strip()
 		uid = os.stat(f"/proc/{pid}").st_uid
-		user = pwd.getpwuid(uid).pw_name
-		return f"{comm} (PID {pid}, user {user})"
+		return f"{comm} (PID {pid}, user {user_name(uid)})"
 	except OSError:
 		return f"unknown (PID {pid})"
 
-def terminate(pid):
-	"""Attempt to terminate a process by PID."""
+TERMINATE_TIMEOUT = 5	# Seconds to wait after SIGTERM before SIGKILL, and after SIGKILL before giving up
+
+def is_own_redis_server(pid):
+	"""True if PID is a redis-server process of the current user (checked right before signalling it,
+	so a PID that was reused meanwhile by another process is never killed)."""
 	try:
-		os.kill(pid, signal.SIGTERM)
-	except OSError:
+		process = psutil.Process(pid)
+		return process.name() == "redis-server" and process.uids().effective == os.getuid()
+	except (psutil.Error, OSError):
 		return False
-	deadline = time.monotonic() + 5
-	while time.monotonic() < deadline:
-		if not process_exists(pid):
+
+def terminate(pid):
+	"""Terminate a process: SIGTERM, and SIGKILL if it is still there after TERMINATE_TIMEOUT seconds.
+
+	SIGTERM lets Redis shut down cleanly, but a hung or stopped (SIGSTOP) server does not act on it;
+	SIGKILL cannot be ignored. Callers must have verified the process (is_own_redis_server()).
+	Returns True when the process is gone.
+	"""
+	for sig in (signal.SIGTERM, signal.SIGKILL):
+		try:
+			os.kill(pid, sig)
+		except ProcessLookupError:
 			return True
-		time.sleep(0.1)
+		except OSError:
+			return False
+		deadline = time.monotonic() + TERMINATE_TIMEOUT
+		while time.monotonic() < deadline:
+			if not process_exists(pid):
+				return True
+			time.sleep(0.1)
+		if sig == signal.SIGTERM:
+			log.warning(f"PID {pid} did not exit within {TERMINATE_TIMEOUT} s after SIGTERM, sending SIGKILL.")
 	return False
 
 class RedisManager:
@@ -225,9 +271,9 @@ class RedisManager:
 	def status(self):
 		# Figure out if PID file exists and what it points to.
 		pidfile_value = pidfile_pid(self.pidfile)
-		description = describe_port(self.port, self.ARG.redis_cli)
+		description = describe_port(self.host, self.port)
 		if description["port_state"] == "free":
-			print(f"Redis is not running on 127.0.0.1:{self.port}")
+			print(f"Redis is not running on {self.host}:{self.port}")
 			if pidfile_value is not None:
 				if process_exists(pidfile_value):
 					log.warning(f"PID file {self.pidfile} exists and points to PID {pidfile_value}, but no process is listening on the port {self.port}.")
@@ -238,9 +284,9 @@ class RedisManager:
 			process_pidfile = description.get("redis_pidfile", None)
 			process_executable = Path(f"/proc/{process_pid}/exe").resolve() if process_pid else None
 			if description["redis_is_responsive"]:
-				print(f"127.0.0.1:{self.port} - responsive Redis server PID {process_pid}, path: {process_executable}.")
+				print(f"{self.host}:{self.port} - responsive Redis server PID {process_pid}, path: {process_executable}.")
 			else:
-				print(f"127.0.0.1:{self.port} - unresponsive Redis server PID {process_pid}, path: {process_executable}.")
+				print(f"{self.host}:{self.port} - unresponsive Redis server PID {process_pid}, path: {process_executable}.")
 			if process_pidfile:
 				process_pidfile_value = pidfile_pid(Path(process_pidfile))
 				if process_pidfile_value is not None and process_pidfile_value != process_pid:
@@ -253,18 +299,25 @@ class RedisManager:
 					if process_pidfile is None:
 						log.warning(f"Redis server on port {self.port} does not report a PID file, but the managed PID file {self.pidfile} exists. This may indicate a configuration mismatch or multiple Redis instances.")
 		else:
-			print(f"127.0.0.1:{self.port} - port is occupied by non-Redis processes:")
+			print(f"{self.host}:{self.port} - port is occupied by non-Redis processes:")
+			for pid in description["owners"]:
+				print(f"  {proc_identity(pid)}")
 		if pidfile_value is not None:
 			if process_exists(pidfile_value):
 				print(f"Managed PID file exists: {self.pidfile} -> PID {pidfile_value} (running)")
 			else:
 				print(f"Stale PID file: {self.pidfile} -> PID {pidfile_value} (not running)")
-		if self.logfile and self.logfile.exists():
-			print(f"Log file exists: {self.logfile}")
+		if description["redis_is_responsive"]:
+			# The log name is timestamped at start, so ask the running server which log it writes
+			try:
+				logfile = probe_client(self.host, self.port).config_get("logfile").get("logfile")
+				print(f"Log file: {logfile}" if logfile else "Log file: none (started with --no-log)")
+			except (redis.ConnectionError, redis.TimeoutError):
+				pass
 
 	def start(self):
 		self.init()
-		description = describe_port(self.port, self.ARG.redis_cli)
+		description = describe_port(self.host, self.port)
 		if description["port_state"] == "redis":
 			print(f"Redis is already running on port {self.port}; skipping start.")
 			return
@@ -284,9 +337,9 @@ class RedisManager:
 						f"Port {self.port} is held by {info['comm']} "
 						f"(PID {pid}), not Redis. Refusing to kill it."
 					)
-				if not proc_identity(pid):
+				if not is_own_redis_server(pid):
 					raise RuntimeError(
-						f"Cannot verify PID {pid}; refusing to kill it."
+						f"Cannot verify {proc_identity(pid)} as your redis-server; refusing to kill it."
 					)
 				if not terminate(pid):
 					raise RuntimeError(f"Could not terminate PID {pid}.")
@@ -308,7 +361,7 @@ class RedisManager:
 			print(f"Removing existing dump file: {dump_file}")
 			dump_file.unlink()
 		cmd = [
-			self.ARG.redis_server,
+			self.redis_server_exe,	# The resolved binary that init() reports
 			"--bind", self.host,
 			"--port", str(self.port),
 			"--daemonize", "yes",
@@ -350,7 +403,7 @@ class RedisManager:
 			print("Force stopping Redis (ignoring PID file).")
 			owners = port_owners(self.port)
 			for pid, info in owners.items():
-				if info["comm"] == "redis-server" and info["uid"] == os.getuid():
+				if is_own_redis_server(pid):
 					if terminate(pid):
 						print(f"Terminated Redis PID {pid}.")
 					else:
@@ -376,7 +429,7 @@ class RedisManager:
 		if self.ARG.dump:
 			# SAVE writes <dir>/<dbfilename> of the running server (dir is its working directory, it can not
 			# be changed at runtime in Redis >= 7), so ask where that is and move the file to the log dir.
-			rs = redis.Redis(host=self.host, port=self.port, socket_connect_timeout=1)
+			rs = probe_client(self.host, self.port)	# Only CONFIG GET here; SAVE itself runs through redis-cli
 			saved = Path(rs.config_get("dir")["dir"]) / rs.config_get("dbfilename")["dbfilename"]
 			print(f"Dumping Redis database to {self.dump_rdb} before shutdown.")
 			result = subprocess.run(
@@ -434,7 +487,7 @@ def main():
 		sub.add_argument("--port", type=int, default=6379)
 		sub.add_argument("--redis-server", default="redis-server", help="Path/name of redis-server binary")
 		sub.add_argument("--redis-cli", default="redis-cli")
-		sub.add_argument("--pidfile", help="Path to PID file; default is log/laupy-gpu-<uid>-<jobid>-<port>.pid")
+		sub.add_argument("--pidfile", help="Path to PID file; default is /tmp/laupy-gpu-<uid>-<jobid>-<port>.pid")
 		sub.add_argument("--no-log", action="store_true", help="Do not write a Redis log (default: timestamped log in --log-dir)")
 		sub.add_argument("--log-dir", default="log")
 		# restart runs stop() and start(), so it needs the options of both
