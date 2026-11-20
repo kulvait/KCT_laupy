@@ -109,7 +109,7 @@ def describe_port(port, redis_cli, verbose=False):
 		description["redis_on_port"] |= description["owners"][pid]["is_redis"]
 		description["redis_is_responsive"] |= description["owners"][pid]["is_responsive_redis"]
 		if verbose:
-			print(f"Port {port}: PID {pid}, owner={owner}, process={info['comm']}, responsive={'yes' if responsive else 'no'}")
+			print(f"Port {port}: PID {pid}, owner={owner}, process={info['comm']}, responsive={'yes' if description['owners'][pid]['is_responsive_redis'] else 'no'}, pidfile={description['owners'][pid].get('pidfile', 'unknown')}")
 		if description["redis_on_port"] and description["redis_is_responsive"]:
 			description["port_state"] = "redis"
 		else:
@@ -204,22 +204,23 @@ class RedisManager:
 		self.logfile = None
 		self.redis_server_exe = find_executable(ARG.redis_server)
 		self.log_dir = Path(self.ARG.log_dir).resolve()
-		self.logfile = default_logfile(self.port, self.log_dir)
+		# Timestamped log in the log dir by default (logs of several runs/nodes may end up in one place);
+		# --no-log disables logging
+		self.logfile = None if ARG.no_log else default_logfile(self.port, self.log_dir)
+		self.dump_rdb = default_dump_rdb(self.port, self.log_dir)
 
 	def init(self):
 		"""Check prerequisites and prepare runtime directories."""
 		self.pidfile.parent.mkdir(parents=True, exist_ok=True)
-		self.dump_rdb = default_dump_rdb(self.port, self.ARG.log_dir)
-		self.dump_rdb.parent.mkdir(parents=True, exist_ok=True)
-		if self.ARG.log:
-			log_dir = Path(self.ARG.log_dir).resolve()
-			log_dir.mkdir(parents=True, exist_ok=True)
-			self.logfile = default_logfile(self.port, log_dir)
+		if self.logfile:
+			self.logfile.parent.mkdir(parents=True, exist_ok=True)
 		print(f"Redis executable: {self.redis_server_exe}")
 		print(f"Redis endpoint:   {self.host}:{self.port}")
 		print(f"PID file:		  {self.pidfile}")
 		if self.logfile:
 			print(f"Log file:		  {self.logfile}")
+		else:
+			print("Log file:		  none (--no-log)")
 
 	def status(self):
 		# Figure out if PID file exists and what it points to.
@@ -254,7 +255,7 @@ class RedisManager:
 		else:
 			print(f"127.0.0.1:{self.port} - port is occupied by non-Redis processes:")
 		if pidfile_value is not None:
-			if process_exists(pidfile_pid):
+			if process_exists(pidfile_value):
 				print(f"Managed PID file exists: {self.pidfile} -> PID {pidfile_value} (running)")
 			else:
 				print(f"Stale PID file: {self.pidfile} -> PID {pidfile_value} (not running)")
@@ -373,18 +374,26 @@ class RedisManager:
 			)
 		# NOSAVE prevents a final RDB save during shutdown.
 		if self.ARG.dump:
+			# SAVE writes <dir>/<dbfilename> of the running server (dir is its working directory, it can not
+			# be changed at runtime in Redis >= 7), so ask where that is and move the file to the log dir.
+			rs = redis.Redis(host=self.host, port=self.port, socket_connect_timeout=1)
+			saved = Path(rs.config_get("dir")["dir"]) / rs.config_get("dbfilename")["dbfilename"]
 			print(f"Dumping Redis database to {self.dump_rdb} before shutdown.")
-			subprocess.run(
+			result = subprocess.run(
 				[
 					self.ARG.redis_cli,
 					"-h", self.host,
 					"-p", str(self.port),
 					"SAVE",
 				],
-				stdout=subprocess.DEVNULL,
-				stderr=subprocess.DEVNULL,
-				timeout=5,
+				capture_output=True,
+				text=True,
+				timeout=60,
 			)
+			if result.returncode != 0 or result.stdout.strip() != "OK":
+				raise RuntimeError(f"SAVE failed, Redis not stopped: {(result.stderr or result.stdout).strip()}")
+			self.dump_rdb.parent.mkdir(parents=True, exist_ok=True)
+			shutil.move(str(saved), str(self.dump_rdb))
 		print(f"Stopping Redis (PID {pid}) on {self.host}:{self.port} ...")
 		subprocess.run(
 			[
@@ -426,12 +435,13 @@ def main():
 		sub.add_argument("--redis-server", default="redis-server", help="Path/name of redis-server binary")
 		sub.add_argument("--redis-cli", default="redis-cli")
 		sub.add_argument("--pidfile", help="Path to PID file; default is log/laupy-gpu-<uid>-<jobid>-<port>.pid")
-		sub.add_argument("--log", action="store_true")
+		sub.add_argument("--no-log", action="store_true", help="Do not write a Redis log (default: timestamped log in --log-dir)")
 		sub.add_argument("--log-dir", default="log")
-		if name in ("init", "start"):
+		# restart runs stop() and start(), so it needs the options of both
+		if name in ("init", "start", "restart"):
 			sub.add_argument("--extra-config", nargs=argparse.REMAINDER, default=[], help="Additional Redis options, placed after --extra-config",)
 			sub.add_argument("--kill-unresponsive-server", action="store_true", help="If redis can not start because of the instance which does not respond to pings, kill it and start a new one. Use with caution.",)
-		if name in ("stop, shutdown"):
+		if name in ("stop", "shutdown", "restart"):
 			sub.add_argument("--dump", action="store_true", help="Dump the Redis database to RDB file before stopping.")
 			sub.add_argument("--force", action="store_true", help="Force stop even if PID file does not match the Redis server on the port.")
 	ARG = parser.parse_args()
