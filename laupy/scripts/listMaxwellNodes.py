@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
+import sys
 from laupy import maxwell
 
 # List Maxwell nodes by class, or describe the whole cluster with --topology
@@ -29,20 +31,45 @@ def main():
                         help="Like --topology, plus idle nodes, the job queue (running/pending jobs, pending reasons) "
                              "and, with --verbose, the users running on each node")
     parser.add_argument('-v', '--verbose', action='store_true', help="With --topology/--workload, add one line per node (and per user)")
-    parser.add_argument('--offline', action='store_true', help="With --topology, do not query sinfo (hardware from maxwell.tsv only)")
+    parser.add_argument('--list', metavar='FILE', dest='table',
+                        help="Node table (maxwell.tsv format) to use with the live SLURM data: it fills what SLURM "
+                             "does not say (FLOPS, warranty, hardware of nodes without features), resolves ambiguous "
+                             "features and is compared with SLURM in --topology; where both have a value, SLURM wins. "
+                             f"Default: ${maxwell.NODE_TABLE_ENV} or ~/maxwell.tsv if it exists")
+    parser.add_argument('--live', action='store_true', help="Use live SLURM data only, ignore any node table")
+    parser.add_argument('--offline', action='store_true',
+                        help="With --topology, do not query SLURM: describe --list FILE or the node table found")
+    parser.add_argument('--export-topology', metavar='FILE',
+                        help="Write the node table (maxwell.tsv format) to FILE and exit, e.g. ~/maxwell.tsv: the nodes "
+                             "SLURM reports, combined with --list FILE or the node table found (none with --live)")
     ARG = parser.parse_args()
 
+    if ARG.live and (ARG.table or ARG.offline):
+        parser.error("--live ignores node tables, it cannot be combined with --list or --offline")
+    if ARG.table and not os.path.isfile(ARG.table):
+        parser.error(f"--list: node table {ARG.table} does not exist")
+    if ARG.offline and not (ARG.topology and not ARG.workload):
+        parser.error("--offline only applies to --topology")
+    if ARG.verbose and not (ARG.topology or ARG.workload):
+        parser.error("--verbose only applies to --topology/--workload")
+    # One source setup for all modes; the single sinfo query is shared by everything below
+    maxwell.set_node_table(ARG.table, live=not ARG.offline, use_table=not ARG.live)
+
+    if ARG.export_topology:
+        try:
+            count = maxwell.export_topology(os.path.expanduser(ARG.export_topology))
+        except RuntimeError as e:
+            print(f"Cannot export the topology: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Wrote {count} nodes to {os.path.expanduser(ARG.export_topology)}")
+        return
     if ARG.workload:
-        if ARG.offline:
-            parser.error("--workload needs live data, it cannot be combined with --offline")
         print(maxwell.format_cluster_topology(maxwell.get_cluster_workload(partition=ARG.partition), verbose=ARG.verbose))
         return
     if ARG.topology:
         topology = maxwell.get_cluster_topology(partition=ARG.partition, live=not ARG.offline)
         print(maxwell.format_cluster_topology(topology, verbose=ARG.verbose))
         return
-    if ARG.verbose or ARG.offline:
-        parser.error("--verbose and --offline only apply to --topology/--workload")
 
     if ARG.strong_nodes:
         STRONG = True

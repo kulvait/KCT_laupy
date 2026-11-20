@@ -7,19 +7,29 @@ import csv
 import os
 import subprocess
 
-# Get the directory of the current script
-script_dir = os.path.dirname(os.path.abspath(__file__))
+# Node table (optional): an export of the Maxwell node list in the maxwell.tsv format, e.g. written by
+# listnodes --export-topology ~/maxwell.tsv. SLURM itself is the source of truth: where both have a
+# value, the live one wins. The table only adds what sinfo does not say (FLOPS, warranty, hardware of
+# nodes without features), resolves ambiguous features, is compared with SLURM in the topology report,
+# and is the fallback when sinfo is not available. Looked up in this order, the first existing file is
+# used: set_node_table(path) / listnodes --list FILE, $LAUPY_MAXWELL_TSV, ~/maxwell.tsv,
+# laupy/maxwell.tsv. set_node_table(use_table=False) / listnodes --live ignores any table.
+maxwell_tsv_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'maxwell.tsv'))
+NODE_TABLE_ENV = "LAUPY_MAXWELL_TSV"
 
-# Define the path to the Maxwell TSV file relative to the parent directory of the script
-maxwell_tsv_path = os.path.join(script_dir, 'maxwell.tsv')
-
-# Make the path absolute (this removes any '..' in the path)
-maxwell_tsv_path = os.path.abspath(maxwell_tsv_path)
+def node_table_candidates():
+	"""Paths searched for the node table, in order (explicit set_node_table() path not included)."""
+	candidates = []
+	if os.environ.get(NODE_TABLE_ENV):
+		candidates.append(os.path.expanduser(os.environ[NODE_TABLE_ENV]))
+	candidates.append(os.path.expanduser(os.path.join("~", "maxwell.tsv")))
+	candidates.append(maxwell_tsv_path)
+	return candidates
 
 # Define hardware categories
-GPU_AVAIL = ['GA100', 'RTX A6000', 'GH100', 'RTX 2080', 'H200', 'GV100GL', 'Quadro RTX', 'GP100GL', 'GB202GL RTX PRO']
+GPU_AVAIL = ['GA100', 'RTX A6000', 'GH100', 'RTX 2080', 'H200', 'GV100GL', 'Quadro RTX', 'GP100GL', 'GB202GL RTX PRO', 'RTX6000', 'L40S']
 GPU_EXCELLENT = ['GA100', 'GH100', 'H200']
-GPU_STRONG = GPU_EXCELLENT + ['GV100GL', 'GB202GL RTX PRO']
+GPU_STRONG = GPU_EXCELLENT + ['GV100GL', 'GB202GL RTX PRO', 'RTX6000']
 GPU_WEAK = ['Quadro RTX', 'GP100GL']
 GPU_ALL = list(set(GPU_AVAIL + GPU_EXCELLENT + GPU_STRONG + GPU_WEAK))
 CPU_EXCELLENT = ['AMD EPYC 7F52', 'AMD EPYC 7H12', 'AMD EPYC 9534', 'AMD EPYC 9374', 'Gold 6240 CPU @ 2.60GHz',
@@ -60,7 +70,14 @@ def parse_maxwell_tsv(file_path):
 			row['Partitions'] = partitions.split()
 	return rows
 
-_node_cache = None
+_node_cache = None	# Rows the node classes are built from: live SLURM rows, or the table without SLURM
+_table_rows = None	# Parsed node table, [] when there is none
+_table_path = None	# Path of the node table in use, None when there is none
+_table_override = None	# Explicit table from set_node_table()
+_live_rows = None	# get_live_node_table() result once queried, None without SLURM data
+_live_error = None	# Why SLURM could not be queried
+_use_live = True
+_use_table = True
 ALL_NODES = []
 GPU_NODES = []
 EXCELLENT_NODES = []
@@ -73,8 +90,56 @@ WEAK_NODES = []
 WEAK_GPU_NODES = []
 WEAK_CPU_NODES = []
 
+def set_node_table(path=None, live=True, use_table=True):
+	"""Choose the node sources and drop the caches.
+
+	path: node table to use (FileNotFoundError if it does not exist); None searches
+	  node_table_candidates() and works without a table if none exists.
+	live: query SLURM (sinfo) for the nodes; False uses the table only (offline).
+	use_table: False ignores any node table (fully live data).
+	"""
+	global _table_override, _use_live, _use_table, _node_cache, _table_rows, _table_path, _live_rows, _live_error
+	if path is not None and not use_table:
+		raise ValueError("A node table path was given together with use_table=False")
+	if path is not None:
+		path = os.path.abspath(os.path.expanduser(path))
+		if not os.path.isfile(path):
+			raise FileNotFoundError(f"Node table {path} does not exist")
+	_table_override = path
+	_use_live = live
+	_use_table = use_table
+	_node_cache = _table_rows = _table_path = _live_rows = _live_error = None
+
+def find_node_table():
+	"""Path of the node table to use, or None when there is none or tables are ignored (not an error)."""
+	if not _use_table:
+		return None
+	if _table_override:
+		return _table_override
+	for candidate in node_table_candidates():
+		if os.path.isfile(candidate):
+			return candidate
+	return None
+
+def load_node_table():
+	"""The parsed node table ([] without one), cached."""
+	global _table_rows, _table_path
+	if _table_rows is None:
+		_table_path = find_node_table()
+		_table_rows = parse_maxwell_tsv(_table_path) if _table_path else []
+	return _table_rows
+
+def get_node_source():
+	"""Where the node classes come from: {"source": "sinfo" | table path | None, "table": path or None,
+	"live_error": str or None}."""
+	init_node_cache()
+	source = "sinfo" if _live_rows is not None else _table_path
+	return {"source": source, "table": _table_path, "live_error": _live_error}
+
 def init_node_cache():
-	global _node_cache
+	"""Build the node lists: from SLURM (one sinfo query) with the table filling gaps, or from the
+	table alone when SLURM is not used or not available. Without both the lists stay empty."""
+	global _node_cache, _live_rows, _live_error
 	global ALL_NODES
 	global GPU_NODES
 	global EXCELLENT_NODES
@@ -87,7 +152,13 @@ def init_node_cache():
 	global WEAK_GPU_NODES
 	global WEAK_CPU_NODES
 	if _node_cache is None:
-		_node_cache = parse_maxwell_tsv(maxwell_tsv_path)
+		table = load_node_table()
+		if _use_live:
+			try:
+				_live_rows = get_live_node_table(table)
+			except RuntimeError as e:
+				_live_error = str(e)
+		_node_cache = _live_rows if _live_rows is not None else table
 		ALL_NODES = []
 		GPU_NODES = []
 		EXCELLENT_NODES = []
@@ -260,6 +331,18 @@ def nodes_from_string(nodesStr):
 
 # Get list of nodes in the partition (using sinfo)
 def get_live_nodes(partition = None, idle_only = False):
+	"""Nodes SLURM reports in the partitions (any state), optionally only idle ones.
+
+	Uses the same sinfo query as the node classes, so submitslurm and listnodes need one query;
+	falls back to a plain sinfo call when that query is switched off or failed.
+	"""
+	if _use_live:
+		init_node_cache()
+	if _live_rows is not None:
+		partitions = partition_list(partition)
+		return [row["Host"] for row in _live_rows
+		        if (not partitions or any(p in row["Partitions"] for p in partitions))
+		        and (not idle_only or row["state"].startswith("idle"))]
 	sinfo_cmd = ["sinfo"]
 	partitions = partition_list(partition)
 	if partitions:
@@ -345,24 +428,203 @@ def unknown_hardware(node):
 	return []
 
 def node_class(node):
-	"""Class of a maxwell.tsv row, as used by submitslurm -e/-s/-x.
+	"""Class of a node (maxwell.tsv or live row) from its hardware, as used by submitslurm -e/-s/-x.
 
-	excellent, strong or weak from the hardware lists; default when the hardware is known
-	(in GPU_ALL/CPU_ALL) but in none of these classes; unclassified when it is not in GPU_ALL/CPU_ALL.
+	excellent, strong or weak from the hardware lists (a node with GPUs by its best GPU, a node
+	without GPU by its CPU); default when the hardware is in GPU_ALL/CPU_ALL but in none of these
+	classes; unclassified when it is not in GPU_ALL/CPU_ALL.
 	"""
-	init_node_cache()
-	host = node["Host"]
-	for name, members in (("excellent", EXCELLENT_NODES), ("strong", STRONG_NODES), ("weak", WEAK_NODES)):
-		if host in members:
-			return name
+	if node["GPU"]:
+		lists = (("excellent", GPU_EXCELLENT), ("strong", GPU_STRONG), ("weak", GPU_WEAK))
+		for name, models in lists:
+			if any(gpu in models for gpu in node["GPU"]):
+				return name
+	else:
+		for name, models in (("excellent", CPU_EXCELLENT), ("strong", CPU_STRONG), ("weak", CPU_WEAK)):
+			if node["CPU"] in models:
+				return name
 	return "unclassified" if unknown_hardware(node) else "default"
 
-def get_cluster_topology(partition=None, live=True):
-	"""Describe the cluster: hardware from maxwell.tsv, optionally with live node states from sinfo.
+# Live node table from SLURM: sinfo is the source of truth, maxwell.tsv only fills gaps
+
+# GPU model features of the Maxwell nodes -> GPU names of maxwell.tsv used in the GPU_* lists.
+# A feature that is not here is used as it is (e.g. L40S) and shows up as unclassified.
+GPU_FEATURE_NAMES = {
+	"A100": "GA100", "H100": "GH100", "H200": "H200", "V100": "GV100GL", "P100": "GP100GL",
+	"A6000": "RTX A6000", "RTX8000": "Quadro RTX",
+}
+# Features used for different GPU models: the model is taken from maxwell.tsv when the node is there
+GPU_AMBIGUOUS_FEATURES = {"RTX6000"}
+# Features that say nothing about the hardware model
+_GENERIC_FEATURES = {"GPU", "BS", "EPYC", "INTEL", "V4", "AC", "AP"}
+
+SINFO_NODE_FORMAT = "%N|%P|%t|%c|%z|%m|%G|%f|%C"
+
+def _known_cpu_name(name, known):
+	"""'Gold 6240' -> 'Gold 6240 CPU @ 2.60GHz' when such a name is known; otherwise name itself."""
+	for candidate in sorted(known):
+		if candidate == name or candidate.startswith(name + " "):
+			return candidate
+	return name
+
+def hardware_from_features(features, table_row=None):
+	"""CPU and GPU model from SLURM node features such as "EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB".
+
+	Returns (cpu, gpu_model, gpu_count_feature): names as used in maxwell.tsv and the GPU_*/CPU_*
+	lists where they can be matched, None where the features do not say. table_row (the node in
+	maxwell.tsv) resolves ambiguous GPU features.
+	"""
+	known_cpus = set(CPU_ALL) | {row["CPU"] for row in load_node_table()}
+	tokens = [t.strip() for t in features.split(",") if t.strip() and t.strip() != "(null)"]
+	cpu = None
+	for i, token in enumerate(tokens):
+		match = re.match(r"^(Gold|Silver|Platinum|Bronze)-(\w+)$", token)
+		if match:
+			cpu = _known_cpu_name(f"{match.group(1)} {match.group(2)}", known_cpus)
+		elif re.match(r"^E[57]-\d{4}$", token):
+			cpu = _known_cpu_name(f"{token} v4" if "V4" in tokens else token, known_cpus)
+		elif token == "EPYC" and i + 1 < len(tokens):
+			model = tokens[i + 1]
+			name = f"AMD EPYC {model}"
+			if name not in known_cpus and re.match(r"^\d{4}F$", model):
+				name = f"AMD EPYC {model[:-1]}"	# 9374F is listed as AMD EPYC 9374
+			cpu = _known_cpu_name(name, known_cpus)
+	gpu_count = None
+	gpu_model = None
+	if "GPU" in tokens:
+		for token in tokens:
+			match = re.match(r"^GPUx(\d+)$", token)
+			if match:
+				gpu_count = int(match.group(1))
+		models = [t for t in tokens if t not in _GENERIC_FEATURES and "-" not in t
+		          and not re.match(r"^(GPUx\d+|\d+G|\d\w{3}F?)$", t)]
+		if models:
+			gpu_model = models[0]
+			if gpu_model in GPU_FEATURE_NAMES:
+				gpu_model = GPU_FEATURE_NAMES[gpu_model]
+			elif gpu_model in GPU_AMBIGUOUS_FEATURES and table_row and table_row["GPU"]:
+				gpu_model = table_row["GPU"][0]	# RTX6000: RTX A6000 or GB202GL RTX PRO
+	return cpu, gpu_model, gpu_count
+
+def gres_gpu_count(gres):
+	"""GPUs in a sinfo %G string: "gpu:4", "gpu:a100:4(S:0-1)", "gpu:2,shard:8" -> 4, 4, 2; None without GPUs."""
+	count = None
+	for item in re.split(r",(?![^()]*\))", gres or ""):
+		item = re.sub(r"\(.*\)$", "", item.strip())
+		fields = item.split(":")
+		if fields[0] == "gpu" and len(fields) >= 2 and fields[-1].isdigit():
+			count = (count or 0) + int(fields[-1])
+	return count
+
+def get_live_node_table(table=None):
+	"""All nodes as SLURM reports them (sinfo -a -N), in the row format of parse_maxwell_tsv().
+
+	Partitions, state, CPUs, memory, GPU count (gres) and the CPU/GPU model (node features) come
+	from SLURM. Only what SLURM does not say is taken from the table (default: maxwell.tsv): the
+	FLOPS and Warranty columns, and the hardware of nodes without features. Each row also has
+	"state", "cpu_load" ({"alloc", "idle", "other", "total"} CPUs or None) and "source" (fields
+	filled from the table, [] if none).
+	Raises RuntimeError when sinfo is not available or fails.
+	"""
+	if table is None:
+		table = load_node_table()
+	by_host = {row["Host"]: row for row in table}
+	rows = {}
+	output = _run_slurm_query(["sinfo", "-a", "-N", "-h", "-o", SINFO_NODE_FORMAT])
+	for line in output.splitlines():
+		fields = line.split("|")
+		if len(fields) < 8:
+			continue
+		host, partition, state, cpus, sct, memory, gres, features = (f.strip() for f in fields[:8])
+		cpu_load = None	# %C: allocated/idle/other/total CPUs
+		if len(fields) > 8 and fields[8].count("/") == 3:
+			try:
+				alloc, idle, other, total = (int(x) for x in fields[8].strip().split("/"))
+				cpu_load = {"alloc": alloc, "idle": idle, "other": other, "total": total}
+			except ValueError:
+				pass
+		partition = partition.rstrip("*")	# The default partition is marked with *
+		if host in rows:
+			if partition not in rows[host]["Partitions"]:
+				rows[host]["Partitions"].append(partition)
+			continue
+		known = by_host.get(host)
+		cpu, gpu_model, gpu_feature_count = hardware_from_features(features, known)
+		gpu_count = gres_gpu_count(gres)
+		if gpu_count is None:
+			gpu_count = gpu_feature_count
+		source = []
+		if cpu is None:
+			cpu = known["CPU"] if known else "unknown CPU"
+			source.append("CPU")
+		if gpu_model is None and (gpu_count or (gpu_count is None and known and known["GPU"])):
+			gpu_model = known["GPU"][0] if known and known["GPU"] else "unknown GPU"
+			source.append("GPU")
+		if gpu_count is None:
+			gpu_count = len(known["GPU"]) if known else 0
+			if gpu_count:
+				source.append("GPU count")
+		sockets_cores_threads = sct.replace(":", "/")
+		cpu_count = f"{cpus} ({sockets_cores_threads})" if cpus.isdigit() and sct.count(":") == 2 else cpus
+		memory_gb = f"{round(int(memory) / 1024)}GB" if memory.isdigit() else (known["Memory"] if known else "")
+		rows[host] = {
+			"Host": host,
+			"CPUCount": cpu_count,
+			"CPUGFLOPS": known.get("CPUGFLOPS", "") if known else "",
+			"Memory": memory_gb,
+			"GPU": [gpu_model] * gpu_count if gpu_model and gpu_count else [],
+			"GPUFLOPS": known.get("GPUFLOPS", "") if known else "",
+			"CPU": cpu,
+			"Constraints": ", ".join(t.strip() for t in features.split(",") if t.strip() and t.strip() != "(null)"),
+			"Partitions": [partition],
+			"Warranty": known.get("Warranty", "") if known else "",
+			"state": state,
+			"cpu_load": cpu_load,
+			"source": source,
+		}
+	return list(rows.values())
+
+def export_topology(file_path, rows=None):
+	"""Write the node table as a maxwell.tsv file; returns the number of nodes written.
+
+	Default rows: the nodes SLURM reports, combined with the node table in use (SLURM values win, the
+	table fills FLOPS, warranty, hardware of nodes without features and ambiguous GPUs). Table nodes
+	that SLURM no longer reports are not written. Uses the cached query (init_node_cache()).
+	Raises RuntimeError when SLURM cannot be queried.
+	"""
+	if rows is None:
+		init_node_cache()
+		if _live_rows is None:
+			raise RuntimeError(_live_error or "SLURM queries are switched off (set_node_table(live=False))")
+		rows = _live_rows
+	header = ["Host", "CPUCount", "CPUGFLOPS", "Memory", "GPU", "GPUFLOPS", "CPU", "Constraints", "Partitions", "Warranty"]
+	with open(file_path, "w") as f:
+		f.write("\t".join(header) + "\n")
+		for row in sorted(rows, key=lambda r: r["Host"]):
+			gpus = row["GPU"]
+			gpu = "+".join(f"{gpus.count(t)}x{t}" for t in sorted(set(gpus))) if gpus else "0"
+			values = dict(row, GPU=gpu, Partitions=" ".join(row["Partitions"]))
+			f.write("\t".join(str(values.get(k, "")) for k in header) + "\n")
+	return len(rows)
+
+def _hardware_text(row):
+	gpus = row["GPU"]
+	gpu = "+".join(f"{gpus.count(t)}x{t}" for t in sorted(set(gpus))) if gpus else "no GPU"
+	return f"{row['CPU']}, {gpu}"
+
+def get_cluster_topology(partition=None, live=True, table_path=None):
+	"""Describe the cluster: nodes, hardware, classes and (live) states.
 
 	partition: limit to these partitions (str "allcpu,allgpu", list, or None for all).
-	live: query sinfo; if that fails, the topology has live_error set and no states.
+	Sources as chosen by set_node_table(): SLURM (the same sinfo query as the node lists) is the source
+	of truth; the node table, if there is one (find_node_table()), fills what sinfo does not say,
+	resolves ambiguous features and is compared with SLURM. If sinfo fails, the table is used without
+	states and live_error is set; without a table the topology is then empty.
+	live: False queries nothing and describes the table (offline).
+	table_path: shortcut for set_node_table(table_path, live=live) before describing.
 	Returns a dict:
+	  source           "sinfo", the path of the table used for the hardware, or None (neither available)
+	  table            path of the node table, None without one (see find_node_table())
 	  partitions       the partitions asked for ([] = all)
 	  live_error       None, or why sinfo could not be queried (live states missing)
 	  nodes            [{"Host", "CPU", "GPU" (list), "Memory", "CPUCount", "Partitions", "Warranty",
@@ -370,23 +632,36 @@ def get_cluster_topology(partition=None, live=True):
 	  gpu_types        {gpu_type: {"nodes": [...], "gpus": count}} for nodes with GPUs
 	  cpu_types        {cpu_type: [nodes]} for nodes without GPUs
 	  classes          {"excellent"|"strong"|"weak"|"default"|"unclassified": [nodes]}, see node_class()
-	  not_described    nodes reported by sinfo but missing in maxwell.tsv
-	  unknown_hardware {"GPU X"|"CPU Y": [nodes]} hardware in no list of this module (the unclassified nodes)
+	  unknown_hardware {"GPU X"|"CPU Y": [nodes]} hardware not in GPU_ALL/CPU_ALL (the unclassified nodes)
+	  not_described    nodes reported by sinfo but missing in the table
+	  not_in_sinfo     table nodes in the partitions that sinfo does not report (sinfo source only)
+	  hardware_differs [(host, table hardware, sinfo hardware)] (sinfo source only)
+	  filled_from_table {host: [fields]} where sinfo said nothing and maxwell.tsv was used (sinfo source only)
 	"""
-	init_node_cache()
+	if table_path is not None:
+		set_node_table(table_path, live=live)
 	partitions = partition_list(partition)
-	states = {}
 	live_error = None
+	live_rows = None
+	states = {}
+	table = load_node_table()
+	table_file = _table_path
 	if live:
-		try:
-			states = get_live_node_states(partitions)
-		except RuntimeError as e:
-			live_error = str(e)
+		if _use_live:
+			init_node_cache()	# The one sinfo query, shared with get_*_nodes()
+			live_rows, live_error = _live_rows, _live_error
+		else:
+			live_error = "SLURM queries are switched off (set_node_table(live=False))"
+		if live_rows is not None:
+			states = {row["Host"]: row["state"] for row in live_rows}
+	source = "sinfo" if live_rows is not None else table_file
+	use_states = live and live_error is None
+	rows = live_rows if live_rows is not None else table
 	nodes = []
-	for row in _node_cache:
+	for row in rows:
 		if partitions and not any(p in row["Partitions"] for p in partitions):
 			continue
-		state = states.get(row["Host"]) if live and live_error is None else None
+		state = states.get(row["Host"]) if use_states else None
 		nodes.append({
 			"Host": row["Host"],
 			"CPU": row.get("CPU", ""),
@@ -397,7 +672,7 @@ def get_cluster_topology(partition=None, live=True):
 			"Warranty": row.get("Warranty", ""),
 			"class": node_class(row),
 			"state": state,
-			"up": node_is_up(state) if live and live_error is None else None,
+			"up": node_is_up(state) if use_states else None,
 		})
 	gpu_types = {}
 	cpu_types = {}
@@ -414,16 +689,35 @@ def get_cluster_topology(partition=None, live=True):
 				info["gpus"] += node["GPU"].count(gpu_type)
 		else:
 			cpu_types.setdefault(node["CPU"], []).append(node["Host"])
-	described = {row["Host"] for row in _node_cache}
+	described = {row["Host"]: row for row in table}
+	shown = {node["Host"] for node in nodes}
+	not_in_sinfo, hardware_differs, filled = [], [], {}
+	if live_rows is not None and table:
+		live_hosts = {row["Host"] for row in live_rows}
+		not_in_sinfo = sorted(row["Host"] for row in table if row["Host"] not in live_hosts
+		                      and (not partitions or any(p in row["Partitions"] for p in partitions)))
+		for row in live_rows:
+			if row["Host"] not in shown:
+				continue
+			if row["source"]:
+				filled[row["Host"]] = row["source"]
+			old = described.get(row["Host"])
+			if old and _hardware_text(old) != _hardware_text(row):
+				hardware_differs.append((row["Host"], _hardware_text(old), _hardware_text(row)))
 	return {
+		"source": source,
 		"partitions": partitions,
 		"live_error": live_error,
 		"nodes": nodes,
 		"gpu_types": gpu_types,
 		"cpu_types": cpu_types,
 		"classes": classes,
-		"not_described": sorted(n for n in states if n not in described),
 		"unknown_hardware": unknown,
+		"table": table_file,
+		"not_described": sorted(n for n in states if table and n not in described and (live_rows is None or n in shown)),
+		"not_in_sinfo": not_in_sinfo,
+		"hardware_differs": hardware_differs,
+		"filled_from_table": filled,
 	}
 
 def format_cluster_topology(topology, verbose=False):
@@ -446,11 +740,27 @@ def format_cluster_topology(topology, verbose=False):
 	lines = []
 	where = ",".join(topology["partitions"]) if topology["partitions"] else "all partitions"
 	lines.append(f"Maxwell cluster topology ({where})")
+	from_sinfo = topology.get("source") == "sinfo"
+	table = topology.get("table")
+	table_name = os.path.basename(table) if table else "the node table"
 	if topology["live_error"]:
 		lines.append(f"Live node states unavailable: {topology['live_error']}")
-	elif not live:
+	elif not live and not from_sinfo:
 		lines.append("Live node states not queried.")
-	lines.append(f"Described in maxwell.tsv: {len(topology['nodes'])} nodes")
+	if from_sinfo:
+		lines.append(f"Hardware from SLURM (sinfo node features): {len(topology['nodes'])} nodes")
+		if table:
+			lines.append(f"Node table: {table}")
+		elif not _use_table:
+			lines.append("Node table: ignored (live data only)")
+		else:
+			lines.append("Node table: none found (" + ", ".join(node_table_candidates()) + "), SLURM only")
+	elif topology.get("source"):
+		lines.append(f"Hardware from {topology['source']}: {len(topology['nodes'])} nodes")
+	else:
+		slurm = "SLURM is not available" if topology["live_error"] else "SLURM was not queried"
+		lines.append(f"No node data: {slurm} and no node table was found ("
+		             + ", ".join(node_table_candidates()) + ").")
 	if live:
 		states = {}
 		for node in topology["nodes"]:
@@ -459,16 +769,18 @@ def format_cluster_topology(topology, verbose=False):
 		up = sum(1 for node in topology["nodes"] if node["up"])
 		lines.append(f"Up: {up}; states: " + ", ".join(f"{k} {v}" for k, v in sorted(states.items(), key=lambda kv: -kv[1])))
 	lines.append("")
-	lines.append("GPU nodes by GPU type")
-	lines.append(f"  {'GPU type':<16} {header}  GPUs  Nodes")
-	for gpu_type, info in sorted(topology["gpu_types"].items(), key=lambda kv: -len(kv[1]["nodes"])):
-		lines.append(f"  {gpu_type:<16} {count(info['nodes'])} {info['gpus']:5d}  {compress_node_list(info['nodes'])}")
-	lines.append("")
-	lines.append("Nodes without GPU by CPU type")
-	lines.append(f"  {'CPU type':<26} {header}  Nodes")
-	for cpu_type, hosts in sorted(topology["cpu_types"].items(), key=lambda kv: -len(kv[1])):
-		lines.append(f"  {cpu_type:<26} {count(hosts)}  {compress_node_list(hosts)}")
-	lines.append("")
+	if topology["gpu_types"]:
+		lines.append("GPU nodes by GPU type")
+		lines.append(f"  {'GPU type':<16} {header}  GPUs  Nodes")
+		for gpu_type, info in sorted(topology["gpu_types"].items(), key=lambda kv: -len(kv[1]["nodes"])):
+			lines.append(f"  {gpu_type:<16} {count(info['nodes'])} {info['gpus']:5d}  {compress_node_list(info['nodes'])}")
+		lines.append("")
+	if topology["cpu_types"]:
+		lines.append("Nodes without GPU by CPU type")
+		lines.append(f"  {'CPU type':<26} {header}  Nodes")
+		for cpu_type, hosts in sorted(topology["cpu_types"].items(), key=lambda kv: -len(kv[1])):
+			lines.append(f"  {cpu_type:<26} {count(hosts)}  {compress_node_list(hosts)}")
+		lines.append("")
 	lines.append("Node classes (submitslurm -e excellent, -s strong, -x excludes weak)")
 	lines.append(f"  {'Class':<12} {header}  Nodes")
 	for name, hosts in topology["classes"].items():
@@ -484,9 +796,11 @@ def format_cluster_topology(topology, verbose=False):
 		lines.append(f"  {'Hardware':<30} {header}  Nodes")
 		for hardware, hosts in sorted(unknown.items(), key=lambda kv: (-len(kv[1]), kv[0])):
 			lines.append(f"  {hardware:<30} {count(hosts)}  {compress_node_list(hosts)}")
-	if topology["not_described"]:
+	if from_sinfo and table:
+		lines.extend(_format_table_comparison(topology))
+	elif topology["not_described"]:
 		lines.append("")
-		lines.append(f"In sinfo but missing in maxwell.tsv ({len(topology['not_described'])}): {compress_node_list(topology['not_described'])}")
+		lines.append(f"In sinfo but missing in {table_name} ({len(topology['not_described'])}): {compress_node_list(topology['not_described'])}")
 	if workload:
 		lines.append("")
 		lines.extend(_format_workload(topology, verbose))
@@ -579,7 +893,7 @@ def get_queue_jobs(partition=None):
 			})
 	return jobs
 
-def get_cluster_workload(partition=None):
+def get_cluster_workload(partition=None, table_path=None):
 	"""get_cluster_topology() plus the current load (listnodes --workload).
 
 	Every node additionally gets "idle" (bool: up and no CPU allocated), "cpus_idle" and
@@ -591,14 +905,17 @@ def get_cluster_workload(partition=None):
 	  pending_reasons, pending_partitions  {reason or partition: pending jobs}
 	  node_users     {node: {user: running jobs}}
 	"""
-	topology = get_cluster_topology(partition=partition, live=True)
+	topology = get_cluster_topology(partition=partition, live=True, table_path=table_path)
 	workload = {"error": topology["live_error"], "running_jobs": 0, "running_users": {}, "pending_jobs": 0,
 	            "pending_reasons": {}, "pending_partitions": {}, "node_users": {}}
 	topology["workload"] = workload
 	if workload["error"]:
 		return topology
 	try:
-		load = get_node_cpu_load(topology["partitions"])
+		if topology["source"] == "sinfo" and _live_rows is not None:
+			load = {row["Host"]: row["cpu_load"] for row in _live_rows if row.get("cpu_load")}	# Same query
+		else:
+			load = get_node_cpu_load(topology["partitions"])
 		jobs = get_queue_jobs(topology["partitions"])
 	except RuntimeError as e:
 		workload["error"] = str(e)
@@ -621,7 +938,7 @@ def get_cluster_workload(partition=None):
 			continue
 		job_nodes = [n for n in job["nodes"] if n in described]
 		if not job_nodes:
-			continue	# Running elsewhere in the cluster
+			continue # Running elsewhere in the cluster
 		workload["running_jobs"] += 1
 		info["jobs"] += 1
 		for n in job_nodes:
@@ -631,6 +948,28 @@ def get_cluster_workload(partition=None):
 			per_node[job["user"]] = per_node.get(job["user"], 0) + 1
 	workload["running_users"] = {u: i for u, i in users.items() if i["jobs"] or i["pending"]}
 	return topology
+
+def _format_table_comparison(topology):
+	"""Where maxwell.tsv differs from SLURM (sinfo source only)."""
+	missing, stale = topology["not_described"], topology["not_in_sinfo"]
+	differs, filled = topology["hardware_differs"], topology["filled_from_table"]
+	if not (missing or stale or differs or filled):
+		return ["", f"{os.path.basename(topology['table'])} agrees with SLURM for these nodes."]
+	lines = ["", f"Compared with {topology['table']} (refresh it with listnodes --export-topology FILE)"]
+	if missing:
+		lines.append(f"  Missing in the table ({len(missing)}): {compress_node_list(missing)}")
+	if stale:
+		lines.append(f"  In the table but not in SLURM ({len(stale)}): {compress_node_list(stale)}")
+	if differs:
+		changes = {}
+		for host, old, new in differs:
+			changes.setdefault((old, new), []).append(host)
+		lines.append(f"  Hardware differs ({len(differs)} nodes), table -> SLURM:")
+		for (old, new), hosts in sorted(changes.items(), key=lambda kv: -len(kv[1])):
+			lines.append(f"    {compress_node_list(hosts)}: {old} -> {new}")
+	if filled:
+		lines.append(f"  No hardware features in SLURM, taken from the table ({len(filled)}): {compress_node_list(filled)}")
+	return lines
 
 def _format_workload(topology, verbose):
 	"""Workload section of format_cluster_topology()."""
