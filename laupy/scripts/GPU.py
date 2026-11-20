@@ -13,6 +13,8 @@ import sys
 import logging
 
 import redis
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 from termcolor import colored
 
 # Create a logger specific to this module
@@ -140,12 +142,20 @@ def getDefaultPlatformID(platforms=None):
 		raise DiscoveryError("No OpenCL platforms with devices found.")
 
 def checkPID(PID):
+	"""True if a process with this PID exists.
+
+	Signal 0 only checks whether the process could be signalled. A process of another user exists but
+	may not be signalled (PermissionError), so it counts as running: its GPU must not be released.
+	"""
 	try:
 		os.kill(PID, 0)
+	except ProcessLookupError:
+		return False
+	except PermissionError:
+		return True
 	except OSError:
 		return False
-	else:
-		return True
+	return True
 
 def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=False, try_start_server=False):
 	lastinit_data = rs.hgetall("%s_INIT"%(prefix))
@@ -169,19 +179,19 @@ def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=F
 		existing_managed = lastinit_data.get("GPUMANAGED", "")
 		existing_managed_list = [int(i) for i in existing_managed.split(",") if i.strip() != ""]
 		if existing_gpu_count != GPUcount:
-			print("Error: Existing GPU count (%d) does not match requested GPU count (%d). Use --force to reinitialize." % (existing_gpu_count, GPUcount))
+			print("Error: Existing GPU count (%d) does not match requested GPU count (%d). Use --force to reinitialize." % (existing_gpu_count, GPUcount), file=sys.stderr)
 			return -1
 		if sorted(existing_managed_list) != sorted(managedList):
-			print("Error: Existing managed GPU list (%s) does not match requested managed GPU list (%s). Use --force to reinitialize." % (existing_managed_list, managedList))
+			print("Error: Existing managed GPU list (%s) does not match requested managed GPU list (%s). Use --force to reinitialize." % (existing_managed_list, managedList), file=sys.stderr)
 			return -1
 		if managedPlatform["id"] != int(rs.hget("%s_PLATFORM"%(prefix), "ID")):
-			print("Error: Existing managed platform ID (%d) does not match requested managed platform ID (%d). Use --force to reinitialize." % (int(rs.hget("%s_PLATFORM"%(prefix), "ID")), managedPlatform["id"]))
+			print("Error: Existing managed platform ID (%d) does not match requested managed platform ID (%d). Use --force to reinitialize." % (int(rs.hget("%s_PLATFORM"%(prefix), "ID")), managedPlatform["id"]), file=sys.stderr)
 			return -1
 		# If all checks pass, purge the existing data without reinitializing, since the server was just started and the data is consistent.
 		purgeNonexistentProcesses(rs, prefix)
 		return 0
 	else:
-		print("Objects already initialized, add force to proceed.")
+		print("Objects already initialized, add force to proceed.", file=sys.stderr)
 		return -1
 
 def storePlatform(rs, prefix, platform):
@@ -224,7 +234,8 @@ def getManagedPlatformDeviceIDs(rs, prefix):
 	if device_ids != expected:
 		print(
 			"Warning: Non-contiguous device IDs on managed platform %d: %s"
-			% (managed_platform_id, ",".join(str(i) for i in device_ids))
+			% (managed_platform_id, ",".join(str(i) for i in device_ids)),
+			file=sys.stderr,
 		)
 	return device_ids
  
@@ -263,7 +274,7 @@ def insertGPU(rs, prefix, GPUID):
 		return 1
 	managed = getManagedGPUs(rs, prefix)
 	if GPUID in managed:
-		print("GPU %d is already managed."%(GPUID))
+		print("GPU %d is already managed."%(GPUID), file=sys.stderr)
 		return 1
 	else:
 		msg = "%s: GPU %d is now managed."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), GPUID)
@@ -276,7 +287,7 @@ def insertGPU(rs, prefix, GPUID):
 def removeGPU(rs, prefix, GPUID):
 	managed = getManagedGPUs(rs, prefix)
 	if GPUID not in managed:
-		print("GPU %d is not managed."%(GPUID))
+		print("GPU %d is not managed."%(GPUID), file=sys.stderr)
 		return 1
 	else:
 		msg = "%s: GPU %d is no longer managed."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), GPUID)
@@ -341,17 +352,21 @@ def main_with_discovery(argv=None):
 			print(f"{default_platform_id}")
 			return 0
 		except DiscoveryError as e:
-			print(f"Error: {e}")
+			print(f"Error: {e}", file=sys.stderr)
 			return -1
 	
 	rs = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=10, socket_timeout=None, decode_responses=True) #GPU acquisition might wait for a long time, so we set socket_timeout to None to avoid timeout errors
 	STARTED_SERVER = False
 	try:
-		#Reduce timeout to 1 second for ping, if it fails, we will try to start the server
-		db = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=1, socket_timeout=1, decode_responses=True)
+		# Quick check, if it fails we may try to start the server. A hung server accepts the connection but
+		# never answers, so the reply is limited to 3 s; retries are off because redis-py >= 6 retries
+		# timed-out commands by default (about 38 s instead of 3 s).
+		db = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=1,
+		                 socket_timeout=3, retry=Retry(NoBackoff(), 0), decode_responses=True)
 		db.ping()
-	except redis.ConnectionError:
-		log.warning("Can not connect to Redis server.")
+	except (redis.ConnectionError, redis.TimeoutError) as e:
+		# Unreachable or hung: with --try-start-server, REDIS start sorts it out (or refuses, see its message)
+		log.warning(f"Can not connect to Redis server: {e}")
 		if ARG.try_start_server:
 			try:
 				log.info("Trying to start Redis server...")
@@ -359,7 +374,10 @@ def main_with_discovery(argv=None):
 				CMD = ["REDIS", "start", "--port", str(ARG.redis_port)]
 				if ARG.kill_unresponsive_server:
 					CMD.append("--kill-unresponsive-server")
-				subprocess.run(CMD, check=True)
+				# REDIS start reports its configuration and status on stdout. Here that is a side note: GPU's stdout
+				# carries only results that scripts capture (e.g. N=$(GPU --redis-manage-all --try-start-server)
+				# must get just the GPU count), so the REDIS output goes to stderr, where the user still sees it.
+				subprocess.run(CMD, check=True, stdout=sys.stderr)
 				rs.ping()
 				STARTED_SERVER = True
 				log.info("Redis server started successfully.")
@@ -370,7 +388,7 @@ def main_with_discovery(argv=None):
 				log.error("Redis server did not respond after starting.")
 				return -1
 		else:
-			print("Can not connect to Redis server, try to start server first.")
+			print("Can not connect to Redis server, try to start server first.", file=sys.stderr)
 			return -1
 	
 	# Redis management setup --redis-manage-all, --redis-manage or --redis-manage-count
@@ -388,11 +406,11 @@ def main_with_discovery(argv=None):
 				raw = [x.strip() for x in ARG.redis_manage.split(",") if x.strip() != ""]
 				managedList = [int(i) for i in raw]
 			except ValueError:
-				print("Invalid --redis-manage list. Use comma-separated integers, e.g. 0,1,3")
+				print("Invalid --redis-manage list. Use comma-separated integers, e.g. 0,1,3", file=sys.stderr)
 				return -1
 			managedList = sorted(set(managedList))
 			if len(managedList) == 0:
-				print("No valid GPU IDs provided in --redis-manage list.")
+				print("No valid GPU IDs provided in --redis-manage list.", file=sys.stderr)
 				return -1
 			valid_ids = set(platform_device_ids)
 			out_of_range = [i for i in managedList if i not in valid_ids]
@@ -401,7 +419,7 @@ def main_with_discovery(argv=None):
 				return -1
 		elif ARG.redis_manage_count is not None:
 			if ARG.redis_manage_count <= 0 or ARG.redis_manage_count > GPUcount:
-				print("Can not manage more GPUs than available or less than 1 but you requested %d out of %d possible!"%(ARG.redis_manage_count, GPUcount))
+				print("Can not manage more GPUs than available or less than 1 but you requested %d out of %d possible!"%(ARG.redis_manage_count, GPUcount), file=sys.stderr)
 				return -1
 			managedList = list(reversed(platform_device_ids))[:ARG.redis_manage_count]
 		try:
@@ -412,26 +430,28 @@ def main_with_discovery(argv=None):
 				print(len(managedList))
 				return 0
 		except Exception as e:
-			print(f"Error: {e}")
+			print(f"Error: {e}", file=sys.stderr)
 			return -1
 	
 	if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)) and ARG.platform_list is False and ARG.default_platform_id is False:
-		print("Not managing any platform, set Redis objects first by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.")
+		# No pool yet: the requested action is not possible. Explain on stderr and fail, so that a script capturing
+		# the output (e.g. GPUCOUNT=$(GPU --gpu-count)) gets no text and sees the error.
+		print("Not managing any platform, set Redis objects first by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.", file=sys.stderr)
 		try:
 			platforms = getOpenCLPlatforms()
 			if all(p["devices"] == [] for p in platforms):
-				print("Redis not initialized, no OpenCL platforms with devices found.")
-				return 0
+				print("Redis not initialized, no OpenCL platforms with devices found.", file=sys.stderr)
+				return 1
 			default_platform_id = getDefaultPlatformID()
 			default_platform = getPlatformByID(platforms, default_platform_id)
 			if default_platform is not None:
 				GPUcount = len(default_platform["devices"])
-				print("Redis not initialized, default platform ID %d has %d GPUs."%(default_platform_id, GPUcount))
+				print("Redis not initialized, default platform ID %d has %d GPUs."%(default_platform_id, GPUcount), file=sys.stderr)
 			else:
-				print("Redis not initialized, default platform ID %d not found."%(default_platform_id))
-			return 0
+				print("Redis not initialized, default platform ID %d not found."%(default_platform_id), file=sys.stderr)
+			return 1
 		except DiscoveryError:
-				print("Redis not initialized, discovery of OpenCL platforms failed, no OpenCL platforms found.")
+				print("Redis not initialized, discovery of OpenCL platforms failed, no OpenCL platforms found.", file=sys.stderr)
 				return -1
 		return -1
 	
@@ -449,7 +469,7 @@ def main_with_discovery(argv=None):
 			print(platform_id)
 			return 0
 		except DiscoveryError as e:
-			print(f"Error: {e}")
+			print(f"Error: {e}", file=sys.stderr)
 			return -1
 
 	if ARG.gpu_count:
@@ -459,7 +479,7 @@ def main_with_discovery(argv=None):
 			print(gpu_count)
 			return 0
 		except DiscoveryError as e:
-			print(f"Error: {e}")
+			print(f"Error: {e}", file=sys.stderr)
 			return -1
 
 	if ARG.managed_gpu_count:
@@ -496,10 +516,10 @@ def main_with_discovery(argv=None):
 		idlelist = getIDLEGPUs(rs, ARG.redis_prefix)
 		managedlist = getManagedGPUs(rs, ARG.redis_prefix)
 		if ID in idlelist:
-			print("GPU %d is already idle."%(ID))
+			print("GPU %d is already idle."%(ID), file=sys.stderr)
 			return 1
 		if ID not in managedlist:
-			print("GPU %d is not managed."%(ID))
+			print("GPU %d is not managed."%(ID), file=sys.stderr)
 			return 1
 		if ID in managedlist and ID not in idlelist:
 			TIME = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -589,7 +609,7 @@ def main(argv=None):
 	try:
 		return main_with_discovery(argv)
 	except DiscoveryError as e:
-		print(f"Error: {e}")
+		print(f"Error: {e}", file=sys.stderr)
 		return -1
 
 if __name__ == "__main__":

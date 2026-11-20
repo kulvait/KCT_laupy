@@ -340,10 +340,10 @@ class RedisManager:
 			print(f"Log file:		  {self.logfile}")
 		else:
 			print("Log file:		  none (--no-log)")
-		# The dump name is timestamped when stop --dump runs, so only its pattern is known here
-		print(f"Dump file:		  {self.log_dir}/laupy-gpu-<time of stop>-{self.job_id}-{self.port}.rdb "
-		      "(written only by stop --dump)")
 		if dry_run:
+			# The dump name is timestamped when stop --dump runs, so only its pattern is known here
+			print(f"Dump file:		  {self.log_dir}/laupy-gpu-<time of stop>-{self.job_id}-{self.port}.rdb "
+			      "(written only by stop --dump)")
 			return
 		self.pidfile.parent.mkdir(parents=True, exist_ok=True)
 		if self.logfile:
