@@ -157,23 +157,70 @@ def checkPID(PID):
 		return False
 	return True
 
+# Atomic pool operations.
+# Several processes use the pool at the same time (gets, releases, purges, a second job setting up the pool).
+# Whenever a step first checks the state ("is the GPU idle?", "does the pool exist?") and then changes it, another
+# process can act in between, and a GPU ends up twice in the idle list: two later --get calls then hand out the same
+# card. Redis runs a Lua script as one step that no other client can interrupt, so check and change happen together.
+
+# Return a GPU to the idle list, unless it is already there or no longer held by the expected process.
+#   KEYS[1]: idle list, KEYS[2]: holder hash; ARGV[1]: GPU ID, ARGV[2]: expected holder PID ('' = any holder)
+#   Returns 1 if returned, 0 if it was already idle, -1 if the holder is not the expected one (taken meanwhile).
+RETURN_GPU_SCRIPT = """
+for _, id in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
+	if id == ARGV[1] then return 0 end
+end
+if ARGV[2] ~= '' and redis.call('HGET', KEYS[2], 'PID') ~= ARGV[2] then return -1 end
+redis.call('DEL', KEYS[2])
+redis.call('LPUSH', KEYS[1], ARGV[1])
+return 1
+"""
+
+def returnGPU(rs, prefix, gpu_id, expected_pid=None):
+	"""Atomically put a GPU back to the idle list and forget its holder (see RETURN_GPU_SCRIPT).
+
+	expected_pid: return it only if this PID still holds it, so that a GPU which was meanwhile returned and taken by
+	another process is not taken away from it. Returns 1 (returned), 0 (already idle) or -1 (other holder).
+	"""
+	script = rs.register_script(RETURN_GPU_SCRIPT)
+	return int(script(keys=["%s_IDLE"%(prefix), "%s_GPU%d"%(prefix, int(gpu_id))],
+	                  args=[int(gpu_id), "" if expected_pid is None else str(expected_pid)]))
+
+# Create the pool in one step unless it exists (or replace it with force), so that two jobs setting up the pool at the
+# same moment can not both fill it.
+#   KEYS: 1 idle list, 2 managed list, 3 events, 4 INIT hash, 5 PLATFORM hash
+#   ARGV: 1 force ('1' or '0'), 2 time, 3 managed IDs comma separated, 4 GPU count, 5 platform ID, 6 platform name,
+#         7 platform device count, 8 event message, 9... managed GPU IDs
+#   Returns 1 if the pool was created, 0 if it already existed.
+CREATE_POOL_SCRIPT = """
+if ARGV[1] ~= '1' and redis.call('EXISTS', KEYS[4]) == 1 then return 0 end
+redis.call('DEL', KEYS[1], KEYS[2], KEYS[3], KEYS[4])
+for i = 9, #ARGV do
+	redis.call('LPUSH', KEYS[1], ARGV[i])
+	redis.call('LPUSH', KEYS[2], ARGV[i])
+end
+redis.call('HSET', KEYS[4], 'TIME', ARGV[2], 'GPUMANAGED', ARGV[3], 'GPUCOUNT', ARGV[4])
+redis.call('HSET', KEYS[5], 'ID', ARGV[5], 'NAME', ARGV[6], 'DEVICECOUNT', ARGV[7])
+redis.call('LPUSH', KEYS[3], ARGV[8])
+return 1
+"""
+
+def createPool(rs, prefix, managedList, GPUcount, managedPlatform, force=False):
+	"""Atomically create the pool (see CREATE_POOL_SCRIPT); True if created, False if it already existed."""
+	now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+	event = "%s: Redis initialized, %d managed GPUs, platform ID %d."%(now, len(managedList), managedPlatform["id"])
+	script = rs.register_script(CREATE_POOL_SCRIPT)
+	keys = ["%s_%s"%(prefix, name) for name in ("IDLE", "MANAGED", "EVENTS", "INIT", "PLATFORM")]
+	args = ["1" if force else "0", now, ",".join(str(i) for i in managedList), GPUcount, managedPlatform["id"],
+	        managedPlatform["name"], len(managedPlatform["devices"]), event] + [int(i) for i in managedList]
+	return int(script(keys=keys, args=args)) == 1
+
 def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=False, try_start_server=False):
-	lastinit_data = rs.hgetall("%s_INIT"%(prefix))
-	if len(lastinit_data.keys()) == 0 or force:
-		rs.delete("%s_IDLE"%(prefix))
-		rs.delete("%s_MANAGED"%(prefix))
-		rs.delete("%s_EVENTS"%(prefix))
-		rs.delete("%s_INIT"%(prefix))
-		for i in managedList:
-			rs.lpush("%s_IDLE"%(prefix), i)
-			rs.lpush("%s_MANAGED"%(prefix), i)
-		rs.hset("%s_INIT"%(prefix), "TIME", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-		rs.hset("%s_INIT"%(prefix), "GPUMANAGED", ",".join([str(i) for i in managedList]))
-		rs.hset("%s_INIT"%(prefix), "GPUCOUNT", GPUcount)
-		storePlatform(rs, prefix, managedPlatform)
-		rs.lpush("%s_EVENTS"%(prefix), "%s: Redis initialized, %d managed GPUs, platform ID %d."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), len(managedList), managedPlatform["id"]))
+	if createPool(rs, prefix, managedList, GPUcount, managedPlatform, force=force):
 		return 0
-	elif try_start_server:
+	# The pool exists (possibly created by another process a moment ago)
+	lastinit_data = rs.hgetall("%s_INIT"%(prefix))
+	if try_start_server:
 		# If the server was started by this script, but INIT data already exists, return true only if GPUcount and managedList match the existing data, otherwise fail with an error.
 		existing_gpu_count = int(lastinit_data.get("GPUCOUNT", 0))
 		existing_managed = lastinit_data.get("GPUMANAGED", "")
@@ -193,16 +240,6 @@ def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=F
 	else:
 		print("Objects already initialized, add force to proceed.", file=sys.stderr)
 		return -1
-
-def storePlatform(rs, prefix, platform):
-	rs.hset(
-		f"{prefix}_PLATFORM",
-		mapping={
-			"ID": platform["id"],
-			"NAME": platform["name"],
-			"DEVICECOUNT": len(platform["devices"]),
-		},
-	)
 
 def getManagedPlatformID(rs, prefix):
 	value = rs.hget(f"{prefix}_PLATFORM", "ID")
@@ -303,11 +340,11 @@ def purgeNonexistentProcesses(rs, prefix):
 		PID = rs.hget("%s_GPU%d"%(prefix, int(i)), "PID")
 		if PID is not None:
 			PID = int(PID)
-			if not checkPID(PID):
-				rs.delete("%s_GPU%d"%(prefix, int(i)))
+			# Returned only while the dead PID still holds it: another purge may have returned it meanwhile, and a
+			# --get may already have handed it to a new holder
+			if not checkPID(PID) and returnGPU(rs, prefix, i, expected_pid=PID) == 1:
 				LOG = "%s: GPU %s acquired by process with PID %d, was released by redis purge as the process with given PID does no longer exist."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i, PID)
 				rs.lpush("%s_EVENTS"%(prefix), LOG)
-				rs.lpush("%s_IDLE"%(prefix), i)
 
 def main_with_discovery(argv=None):
 	# Parsing and validation
@@ -513,21 +550,23 @@ def main_with_discovery(argv=None):
 			PID = ARG.pid
 		else:
 			PID = os.getppid()
-		idlelist = getIDLEGPUs(rs, ARG.redis_prefix)
-		managedlist = getManagedGPUs(rs, ARG.redis_prefix)
-		if ID in idlelist:
-			print("GPU %d is already idle."%(ID), file=sys.stderr)
-			return 1
-		if ID not in managedlist:
+		if ID not in getManagedGPUs(rs, ARG.redis_prefix):
 			print("GPU %d is not managed."%(ID), file=sys.stderr)
 			return 1
-		if ID in managedlist and ID not in idlelist:
-			TIME = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-			LOG = "%s: GPU %d released by PID %d."%(TIME, ID, PID)
-			rs.lpush("%s_EVENTS"%(ARG.redis_prefix), LOG)
-			rs.delete("%s_GPU%d"%(ARG.redis_prefix, ID))
-			rs.lpush("%s_IDLE"%(ARG.redis_prefix), ID)
-			print("GPU %d released."%(ARG.release))
+		# Check "not idle" and return it in one atomic step; only for the holder seen now, so that a GPU released and
+		# taken by another process in the meantime (e.g. a duplicate --release) is not taken from that process
+		holder_pid = rs.hget("%s_GPU%d"%(ARG.redis_prefix, ID), "PID")
+		result = returnGPU(rs, ARG.redis_prefix, ID, expected_pid=holder_pid)
+		if result == 0:
+			print("GPU %d is already idle."%(ID), file=sys.stderr)
+			return 1
+		if result == -1:
+			print("GPU %d was released and taken by another process meanwhile; not released."%(ID), file=sys.stderr)
+			return 1
+		TIME = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+		LOG = "%s: GPU %d released by PID %d."%(TIME, ID, PID)
+		rs.lpush("%s_EVENTS"%(ARG.redis_prefix), LOG)
+		print("GPU %d released."%(ARG.release))
 		return 0
 	
 	if ARG.log:
@@ -573,16 +612,7 @@ def main_with_discovery(argv=None):
 		return 0
 	
 	if ARG.redis_purge:
-		activeList = getActiveGPUs(rs, ARG.redis_prefix)
-		for i in activeList:
-			PID = rs.hget("%s_GPU%d"%(ARG.redis_prefix, int(i)), "PID")
-			if PID is not None:
-				PID = int(PID)
-				if not checkPID(PID):
-					rs.delete("%s_GPU%d"%(ARG.redis_prefix, int(i)))
-					LOG = "%s: GPU %s acquired by process with PID %d, was released by redis purge as the process with given PID does no longer exist."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i, PID)
-					rs.lpush("%s_EVENTS"%(ARG.redis_prefix), LOG)
-					rs.lpush("%s_IDLE"%(ARG.redis_prefix), i)
+		purgeNonexistentProcesses(rs, ARG.redis_prefix)
 		return 0
 	
 	if ARG.active:
