@@ -37,10 +37,6 @@ def main():
                              "SLURM reports, combined with --list FILE or the node table found (none with --no-list)")
     ARG = parser.parse_args()
 
-    if ARG.live and (ARG.table or ARG.offline):
-        parser.error("--live ignores node tables, it cannot be combined with --list or --offline")
-    if ARG.table and not os.path.isfile(ARG.table):
-        parser.error(f"--list: node table {ARG.table} does not exist")
     if ARG.offline and not (ARG.topology and not ARG.workload):
         parser.error("--offline only applies to --topology")
     if ARG.verbose and not (ARG.topology or ARG.workload):
