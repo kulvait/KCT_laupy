@@ -7,7 +7,7 @@ import argparse
 from laupy import maxwell
 import shlex
 import logging
-from laupy.cli import SubmissionEnvironment, add_common_arguments, parse_comma_separated, parse_env_assignment, print_arguments, resolve_directory_tree
+from laupy.cli import SubmissionEnvironment, add_common_arguments, add_node_source_arguments, apply_node_source_arguments, print_node_notes, parse_comma_separated, parse_env_assignment, print_arguments, resolve_directory_tree
 from laupy.pipeline_entries import PipelineEntriesStore, select_pipeline_entries, retire_pipeline_entries, cancel_pipeline_entries
 from laupy.flow import SchedulingError, clean_pipeline_entries, remove_pipeline_dir, schedule_slurm_job
 from laupy.slurm import run_slurm_command
@@ -88,6 +88,7 @@ def main():
     parser.add_argument("-e", "--excellent-nodes", action="store_true", help="Use excellent nodes only")
     parser.add_argument("-s", "--strong-nodes", action="store_true", help="Use strong nodes only")
     parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
+    add_node_source_arguments(parser)
     parser.add_argument("--env", type=parse_env_assignment, action="append", default=[], metavar="NAME=VALUE", help="Set an environment variable for every submitted job (repeatable); overrides the defaults PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME and LD_PRELOAD=. Shown with --verbose.")
     scheduling_group = parser.add_mutually_exclusive_group()
     scheduling_group.add_argument("--pipeline-step", type=str, default="-1", help="Pipeline step number or DAG node name. Uses only explicit DAG dependencies. Default is -1, which are not put or evaluated against DAG.")
@@ -136,49 +137,41 @@ def main():
             sys.exit(1)
 
     SLURM_ARGS_LIST = []
-    # Node list handling
-    node_list = []
-    excluded_node_list = []
-
-    if ARG.nodelist:
-        node_list = maxwell.nodes_from_string(ARG.nodelist)
-    elif ARG.excellent_nodes:
-        node_list = maxwell.get_excellent_nodes(partition=ARG.partition)
-    elif ARG.strong_nodes:
-        node_list = maxwell.get_strong_nodes(partition=ARG.partition)
-    elif ARG.exclude_weak_nodes:
-        excluded_node_list = maxwell.get_weak_nodes(partition=ARG.partition)
-    if ARG.gpu_nodes:
-        gpu_nodes = maxwell.get_gpu_nodes(partition=ARG.partition)
-        if len(node_list) > 0:
-            node_list = list(set(node_list).intersection(set(gpu_nodes)))
-        else:
-            node_list = gpu_nodes
-    node_selection_requested = bool(ARG.nodelist or ARG.excellent_nodes or ARG.strong_nodes or ARG.gpu_nodes)
-    if len(node_list) > 0 or len(excluded_node_list) > 0:
-        live_nodes = set(maxwell.get_live_nodes(partition=ARG.partition, idle_only=False))
-        node_list = sorted(set(node_list).intersection(live_nodes))
-        excluded_node_list = sorted(set(excluded_node_list).intersection(live_nodes))
-    # Never pass an empty --nodelist=/--exclude=, sbatch rejects it
-    if node_list:
-        SLURM_ARGS_LIST.append(f"--nodelist={','.join(node_list)}")
-    elif node_selection_requested:
-        if ARG.nodelist or ARG.gpu_nodes:
-            # An explicit node list or GPU request must not silently run elsewhere
-            what = "--nodelist" if ARG.nodelist else "--gpu-nodes"
-            print(f"No available nodes match {what} in partition {ARG.partition}, not submitting.", file=sys.stderr)
+    # Node selection: classes and node states from one cached sinfo query (laupy.maxwell)
+    apply_node_source_arguments(parser, ARG)	# Only configures; SLURM is queried when nodes are needed
+    if ARG.nodelist or ARG.gpu_nodes or ARG.excellent_nodes or ARG.strong_nodes or ARG.exclude_weak_nodes:
+        try:
+            node_request = maxwell.sbatch_node_request(ARG.partition, nodelist=ARG.nodelist, gpu_only=ARG.gpu_nodes,
+                                                       excellent=ARG.excellent_nodes, strong=ARG.strong_nodes,
+                                                       exclude_weak=ARG.exclude_weak_nodes)
+        except RuntimeError as e:
+            print_node_notes()
+            print(f"Cannot query the nodes: {e}", file=sys.stderr)
             sys.exit(1)
-        print(f"No available nodes match the requested node class in partition {ARG.partition}. Submitting without node restrictions.")
-    if excluded_node_list:
-        SLURM_ARGS_LIST.append(f"--exclude={','.join(excluded_node_list)}")
-
-    if ARG.verbose:
-        if node_list:
-            print(f"Submitting to nodes: {','.join(node_list)}")
-        elif not node_selection_requested:
+        print_node_notes()
+        if ARG.verbose:
+            source = maxwell.get_node_source()
+            print(f"Node hardware from: {source['hardware_from'] or 'nothing'} (feature provider {source['feature_provider']}"
+                  + (f", node table {source['table']})" if source["table"] else ", no node table)"))
+            for line in maxwell.format_query_log():
+                print(line)
+        for note in node_request.notes:
+            print(note)
+        if node_request.error:
+            # An explicit node list or GPU request must not silently run elsewhere
+            print(f"{node_request.error}, not submitting.", file=sys.stderr)
+            sys.exit(1)
+        SLURM_ARGS_LIST.extend(node_request.sbatch_arguments())
+        if ARG.verbose:
+            if node_request.nodelist:
+                print(f"Submitting to nodes: {maxwell.compress_node_list(node_request.nodelist)}")
+            if node_request.exclude:
+                print(f"Excluding nodes: {maxwell.compress_node_list(node_request.exclude)}")
+    else:
+        if ARG.node_table or ARG.no_list or ARG.feature_provider:
+            print("Note: --list/--no-list/--feature-provider have no effect without -n/-g/-e/-s/-x (no node query needed).")
+        if ARG.verbose:
             print("Submitting without node restrictions.")
-        if excluded_node_list:
-            print(f"Excluding nodes: {','.join(excluded_node_list)}")
 
     if ARG.oversubscribe:
         SLURM_ARGS_LIST.append("--oversubscribe")

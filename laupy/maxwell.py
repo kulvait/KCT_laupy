@@ -6,25 +6,35 @@ import re
 import csv
 import os
 import subprocess
+from dataclasses import dataclass, field
 
-# Node table (optional): an export of the Maxwell node list in the maxwell.tsv format, e.g. written by
-# listnodes --export-topology ~/maxwell.tsv. SLURM itself is the source of truth: where both have a
-# value, the live one wins. The table only adds what sinfo does not say (FLOPS, warranty, hardware of
-# nodes without features), resolves ambiguous features, is compared with SLURM in the topology report,
-# and is the fallback when sinfo is not available. Looked up in this order, the first existing file is
-# used: set_node_table(path) / listnodes --list FILE, $LAUPY_MAXWELL_TSV, ~/maxwell.tsv,
-# laupy/maxwell.tsv. set_node_table(use_table=False) / listnodes --live ignores any table.
-maxwell_tsv_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'maxwell.tsv'))
+# Node table (maxwell.tsv format): the hardware of the Maxwell nodes. Querying SLURM for the node
+# features takes seconds (sinfo with %f over all nodes), querying only node states is fast, so by
+# default (feature provider "app-managed-list") the hardware comes from an app-managed node table and
+# SLURM is only asked which nodes exist and their states:
+#   - the managed table lives at ~/.laupy/maxwell.tsv ($LAUPY_MAXWELL_TSV overrides the path);
+#   - if it is missing, it is unpacked from the packaged laupy/maxwell.tsv.gz and at once updated from
+#     a SLURM feature query (the packaged table fills what SLURM does not say), or, without the
+#     package file, created from a SLURM feature query;
+#   - if it is older than MANAGED_LIST_MAX_AGE_DAYS, it is refreshed from a SLURM feature query
+#     (SLURM values win, the old table fills gaps; nodes SLURM does not report are kept);
+#   - listnodes --update-default-list refreshes it on request.
+# Other providers: "list" (the table as it is, no management), "slurm" (hardware from the SLURM
+# features on every call, the table completes it). --list FILE / set_node_table(path) uses that file
+# without managing it; --no-list / set_node_table(use_table=False) uses no table at all (SLURM only).
 NODE_TABLE_ENV = "LAUPY_MAXWELL_TSV"
+DEFAULT_NODE_TABLE = os.path.join("~", ".laupy", "maxwell.tsv")
+PACKAGED_NODE_TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maxwell.tsv.gz")
+MANAGED_LIST_MAX_AGE_DAYS = 7
+NODE_NOTES = []	# Messages for the user about the node table (installed, created, refreshed, refresh failed)
+
+def default_node_table_path():
+	"""Path of the app-managed node table: $LAUPY_MAXWELL_TSV or ~/.laupy/maxwell.tsv."""
+	return os.path.abspath(os.path.expanduser(os.environ.get(NODE_TABLE_ENV) or DEFAULT_NODE_TABLE))
 
 def node_table_candidates():
-	"""Paths searched for the node table, in order (explicit set_node_table() path not included)."""
-	candidates = []
-	if os.environ.get(NODE_TABLE_ENV):
-		candidates.append(os.path.expanduser(os.environ[NODE_TABLE_ENV]))
-	candidates.append(os.path.expanduser(os.path.join("~", "maxwell.tsv")))
-	candidates.append(maxwell_tsv_path)
-	return candidates
+	"""Paths searched for the node table without an explicit one (the app-managed location)."""
+	return [default_node_table_path()]
 
 # Define hardware categories
 GPU_AVAIL = ['GA100', 'RTX A6000', 'GH100', 'RTX 2080', 'H200', 'GV100GL', 'Quadro RTX', 'GP100GL', 'GB202GL RTX PRO', 'RTX6000', 'L40S']
@@ -78,6 +88,10 @@ _live_rows = None	# get_live_node_table() result once queried, None without SLUR
 _live_error = None	# Why SLURM could not be queried
 _use_live = True
 _use_table = True
+FEATURE_PROVIDERS = ("app-managed-list", "list", "slurm")
+DEFAULT_FEATURE_PROVIDER = "app-managed-list"
+_feature_provider = DEFAULT_FEATURE_PROVIDER
+_state_cache = {}	# Node states by partitions (table providers): one light sinfo query
 ALL_NODES = []
 GPU_NODES = []
 EXCELLENT_NODES = []
@@ -90,17 +104,27 @@ WEAK_NODES = []
 WEAK_GPU_NODES = []
 WEAK_CPU_NODES = []
 
-def set_node_table(path=None, live=True, use_table=True):
+def set_node_table(path=None, live=True, use_table=True, feature_provider=DEFAULT_FEATURE_PROVIDER):
 	"""Choose the node sources and drop the caches.
 
-	path: node table to use (FileNotFoundError if it does not exist); None searches
-	  node_table_candidates() and works without a table if none exists.
-	live: query SLURM (sinfo) for the nodes; False uses the table only (offline).
-	use_table: False ignores any node table (fully live data).
+	path: node table to use as it is (FileNotFoundError if it does not exist); None uses the
+	  app-managed table (default_node_table_path()).
+	live: query SLURM (sinfo); False uses the table only (offline, no refresh).
+	use_table: False uses no node table at all: hardware from the SLURM features only.
+	feature_provider: "app-managed-list" (default): hardware from the managed table, installed,
+	  created and refreshed as needed (see the module comment), SLURM only for node states;
+	  "list": hardware from the table as it is, SLURM only for node states; "slurm": hardware from
+	  the SLURM node features (one slower sinfo query with features and states), the table completes
+	  it. A table provider without a table falls back to "slurm".
 	"""
 	global _table_override, _use_live, _use_table, _node_cache, _table_rows, _table_path, _live_rows, _live_error
+	global _feature_provider, _state_cache
 	if path is not None and not use_table:
 		raise ValueError("A node table path was given together with use_table=False")
+	if feature_provider not in FEATURE_PROVIDERS:
+		raise ValueError(f"feature_provider must be one of {FEATURE_PROVIDERS}, got {feature_provider!r}")
+	if feature_provider == "list" and not use_table:
+		raise ValueError("feature_provider='list' needs a node table, it cannot be combined with use_table=False")
 	if path is not None:
 		path = os.path.abspath(os.path.expanduser(path))
 		if not os.path.isfile(path):
@@ -108,18 +132,121 @@ def set_node_table(path=None, live=True, use_table=True):
 	_table_override = path
 	_use_live = live
 	_use_table = use_table
+	_feature_provider = feature_provider if use_table else "slurm"
+	_state_cache = {}
 	_node_cache = _table_rows = _table_path = _live_rows = _live_error = None
 
+def write_node_table(file_path, rows):
+	"""Write rows as a maxwell.tsv file atomically (other processes never see half a file); returns
+	the number of nodes written. Creates the directory."""
+	import tempfile
+	file_path = os.path.abspath(os.path.expanduser(file_path))
+	os.makedirs(os.path.dirname(file_path), exist_ok=True)
+	header = ["Host", "CPUCount", "CPUGFLOPS", "Memory", "GPU", "GPUFLOPS", "CPU", "Constraints", "Partitions", "Warranty"]
+	handle, temporary = tempfile.mkstemp(dir=os.path.dirname(file_path), prefix=".maxwell.", suffix=".tsv")
+	try:
+		with os.fdopen(handle, "w") as f:
+			f.write("\t".join(header) + "\n")
+			for row in sorted(rows, key=lambda r: r["Host"]):
+				gpus = row["GPU"]
+				gpu = "+".join(f"{gpus.count(t)}x{t}" for t in sorted(set(gpus))) if gpus else "0"
+				values = dict(row, GPU=gpu, Partitions=" ".join(row["Partitions"]))
+				f.write("\t".join(str(values.get(k, "")) for k in header) + "\n")
+		os.chmod(temporary, 0o644)
+		os.replace(temporary, file_path)
+	except BaseException:
+		if os.path.exists(temporary):
+			os.unlink(temporary)
+		raise
+	return len(rows)
+
+def _combined_rows(live_rows, table_rows):
+	"""Live rows (already completed from the table) plus the table nodes SLURM does not report."""
+	live_hosts = {row["Host"] for row in live_rows}
+	return list(live_rows) + [row for row in table_rows if row["Host"] not in live_hosts]
+
+def update_node_table(file_path=None):
+	"""Refresh a node table from a SLURM feature query and write it (default: the app-managed table).
+
+	SLURM values win; the existing table at file_path fills what SLURM does not say and keeps the
+	nodes SLURM does not report. Returns (path, number of nodes, live rows).
+	Raises RuntimeError when SLURM cannot be queried.
+	"""
+	file_path = os.path.abspath(os.path.expanduser(file_path)) if file_path else default_node_table_path()
+	old = parse_maxwell_tsv(file_path) if os.path.isfile(file_path) else []
+	live_rows = get_live_node_table(old)
+	count = write_node_table(file_path, _combined_rows(live_rows, old))
+	return file_path, count, live_rows
+
+def _install_packaged_node_table(file_path):
+	"""Unpack laupy/maxwell.tsv.gz to file_path (atomically), keeping the archive's time stamp."""
+	import gzip
+	import shutil
+	import tempfile
+	os.makedirs(os.path.dirname(file_path), exist_ok=True)
+	handle, temporary = tempfile.mkstemp(dir=os.path.dirname(file_path), prefix=".maxwell.", suffix=".tsv")
+	try:
+		with gzip.open(PACKAGED_NODE_TABLE, "rb") as source, os.fdopen(handle, "wb") as target:
+			shutil.copyfileobj(source, target)
+		os.chmod(temporary, 0o644)
+		stamp = os.path.getmtime(PACKAGED_NODE_TABLE)
+		os.utime(temporary, (stamp, stamp))
+		os.replace(temporary, file_path)
+	except BaseException:
+		if os.path.exists(temporary):
+			os.unlink(temporary)
+		raise
+
+def _prepare_managed_node_table():
+	"""Make sure the app-managed table exists and is recent; may set _live_rows (when it queried SLURM).
+
+	Returns the path, or None when there is no table and none could be made."""
+	global _live_rows, _live_error
+	import time
+	path = default_node_table_path()
+	refresh_now = False
+	if not os.path.isfile(path):
+		if os.path.isfile(PACKAGED_NODE_TABLE):
+			# The packaged table is the starting point (FLOPS, warranty, nodes without features);
+			# it is updated from SLURM right away below
+			_install_packaged_node_table(path)
+			NODE_NOTES.append(f"Installed the node table {path} from the laupy package")
+			refresh_now = True
+		elif _use_live:
+			try:
+				path, count, _live_rows = update_node_table(path)
+				NODE_NOTES.append(f"Created the node table {path} from SLURM ({count} nodes)")
+				return path
+			except (RuntimeError, OSError) as e:
+				_live_error = str(e)
+				return None
+		else:
+			return None
+	age_days = (time.time() - os.path.getmtime(path)) / 86400
+	if _use_live and (refresh_now or age_days > MANAGED_LIST_MAX_AGE_DAYS):
+		reason = "first use" if refresh_now else f"was {age_days:.0f} days old"
+		try:
+			path, count, _live_rows = update_node_table(path)
+			NODE_NOTES.append(f"Updated the node table {path} from SLURM ({count} nodes, {reason})")
+		except (RuntimeError, OSError) as e:
+			NODE_NOTES.append(f"Could not update the node table {path} from SLURM ({reason}), using it as it is: {e}")
+			if refresh_now:	# Mark the unpacked table as outdated, so the next call tries again
+				stale = time.time() - (MANAGED_LIST_MAX_AGE_DAYS + 1) * 86400
+				os.utime(path, (stale, stale))
+	return path
+
 def find_node_table():
-	"""Path of the node table to use, or None when there is none or tables are ignored (not an error)."""
+	"""Path of the node table to use, or None when there is none or tables are ignored (not an error).
+
+	With the app-managed provider this installs, creates or refreshes the managed table."""
 	if not _use_table:
 		return None
 	if _table_override:
 		return _table_override
-	for candidate in node_table_candidates():
-		if os.path.isfile(candidate):
-			return candidate
-	return None
+	if _feature_provider == "app-managed-list":
+		return _prepare_managed_node_table()
+	path = default_node_table_path()
+	return path if os.path.isfile(path) else None
 
 def load_node_table():
 	"""The parsed node table ([] without one), cached."""
@@ -131,10 +258,12 @@ def load_node_table():
 
 def get_node_source():
 	"""Where the node classes come from: {"source": "sinfo" | table path | None, "table": path or None,
-	"live_error": str or None}."""
+	"live_error": str or None, "feature_provider": the provider asked for, "hardware_from": "slurm" |
+	"list" | None (what was actually used)}."""
 	init_node_cache()
 	source = "sinfo" if _live_rows is not None else _table_path
-	return {"source": source, "table": _table_path, "live_error": _live_error}
+	return {"source": source, "table": _table_path, "live_error": _live_error, "feature_provider": _feature_provider,
+	        "hardware_from": "slurm" if _live_rows is not None else ("list" if _table_path else None)}
 
 def init_node_cache():
 	"""Build the node lists: from SLURM (one sinfo query) with the table filling gaps, or from the
@@ -152,8 +281,8 @@ def init_node_cache():
 	global WEAK_GPU_NODES
 	global WEAK_CPU_NODES
 	if _node_cache is None:
-		table = load_node_table()
-		if _use_live:
+		table = load_node_table()	# May install, create or refresh the app-managed table (and set _live_rows)
+		if _live_rows is None and _live_error is None and _use_live and (_feature_provider == "slurm" or not table):
 			try:
 				_live_rows = get_live_node_table(table)
 			except RuntimeError as e:
@@ -338,6 +467,9 @@ def get_live_nodes(partition = None, idle_only = False):
 	"""
 	if _use_live:
 		init_node_cache()
+	if _live_rows is None and _use_live and _feature_provider != "slurm":
+		states = _light_node_states(partition)	# Table providers: only node states are queried
+		return [host for host, state in states.items() if not idle_only or state.startswith("idle")]
 	if _live_rows is not None:
 		partitions = partition_list(partition)
 		return [row["Host"] for row in _live_rows
@@ -353,6 +485,104 @@ def get_live_nodes(partition = None, idle_only = False):
 		if not idle_only or "idle" in line:
 			nodes.append(line.split()[5])  # Assuming the node list is in the 6th column
 	return nodes_from_string(",".join(nodes))
+
+# Node selection for listnodes and submitslurm: one cached sinfo query for classes and states
+
+NODE_STATES = ("any", "up", "idle")
+
+def _light_node_states(partition=None):
+	"""{host: state} of the partitions from the light sinfo query (feature provider "list"), cached."""
+	key = tuple(partition_list(partition))
+	if key not in _state_cache:
+		_state_cache[key] = get_live_node_states(list(key))
+	return _state_cache[key]
+
+def _node_states(partition=None):
+	"""{host: state} from the cached live query, or None without live data."""
+	init_node_cache()
+	if _live_rows is not None:
+		return {row["Host"]: row["state"] for row in _live_rows}
+	if _use_live and _feature_provider != "slurm":
+		return _light_node_states(partition)
+	return None
+
+def select_nodes(partition=None, node_class=None, gpu_only=False, nodelist=None, state="any"):
+	"""Nodes of the partitions that SLURM reports, filtered; sorted host names.
+
+	node_class: None (all), "excellent", "strong" (includes excellent) or "weak" (see init_node_cache()).
+	gpu_only: only nodes with GPUs. nodelist: only these nodes (SLURM syntax "max-wn[001-004],max-a").
+	state: "any" (every node SLURM reports), "up" (can run jobs: not down, drained or not responding)
+	  or "idle".
+	Uses the cached sinfo query of the node lists; only without it (SLURM switched off or failed)
+	get_live_nodes() makes a plain sinfo call, and "up" then counts every listed node.
+	"""
+	if state not in NODE_STATES:
+		raise ValueError(f"state must be one of {NODE_STATES}, got {state!r}")
+	init_node_cache()
+	candidates = set(get_live_nodes(partition, idle_only=(state == "idle")))
+	states = _node_states(partition)
+	if state == "up" and states is not None:
+		candidates = {n for n in candidates if node_is_up(states.get(n))}
+	if node_class is not None:
+		members = {"excellent": EXCELLENT_NODES, "strong": STRONG_NODES, "weak": WEAK_NODES}.get(node_class)
+		if members is None:
+			raise ValueError(f"node_class must be excellent, strong or weak, got {node_class!r}")
+		candidates &= set(members)
+	if gpu_only:
+		candidates &= set(GPU_NODES)
+	if nodelist:
+		candidates &= set(nodes_from_string(nodelist) if isinstance(nodelist, str) else nodelist)
+	return sorted(candidates)
+
+@dataclass
+class NodeRequest:
+	"""What submitslurm passes to sbatch for a node selection (see sbatch_node_request())."""
+	nodelist: list = field(default_factory=list)	# --nodelist, [] for none
+	exclude: list = field(default_factory=list)	# --exclude, [] for none
+	error: str = None	# Set when nothing can be submitted (explicit nodes or GPUs not available)
+	notes: list = field(default_factory=list)	# Information for the user (fallbacks, skipped nodes)
+
+	def sbatch_arguments(self):
+		"""--nodelist=/--exclude= arguments; never empty lists (sbatch rejects them)."""
+		arguments = []
+		if self.nodelist:
+			arguments.append(f"--nodelist={','.join(self.nodelist)}")
+		if self.exclude:
+			arguments.append(f"--exclude={','.join(self.exclude)}")
+		return arguments
+
+def sbatch_node_request(partition=None, nodelist=None, gpu_only=False, excellent=False, strong=False, exclude_weak=False):
+	"""Node options of submitslurm (-n, -g, -e, -s, -x) as sbatch arguments, from one cached sinfo query.
+
+	-n (nodelist) takes precedence over -e over -s; -g limits any of them to GPU nodes, -x then removes
+	weak nodes from the required ones, or alone gives --exclude with the weak nodes.
+	Required nodes (--nodelist) are limited to nodes that are up in the partitions: a node that is down
+	or drained in the list would keep the job pending. Weak nodes to exclude are those SLURM reports.
+	An explicit node list or a GPU request that no available node matches gives error; an excellent
+	or strong request without available nodes falls back to no restriction (with a note).
+	"""
+	request = NodeRequest()
+	node_class = None if nodelist else ("excellent" if excellent else ("strong" if strong else None))
+	if nodelist or gpu_only or node_class:
+		request.nodelist = select_nodes(partition, node_class=node_class, gpu_only=gpu_only,
+		                                nodelist=nodelist if nodelist else None, state="up")
+		if exclude_weak:	# Combined with -x: leave the weak nodes out of the required ones
+			request.nodelist = sorted(set(request.nodelist) - set(WEAK_NODES))
+		if nodelist:
+			unavailable = sorted(set(nodes_from_string(nodelist)) - set(request.nodelist))
+			if unavailable and request.nodelist:
+				request.notes.append(f"Skipping {len(unavailable)} requested nodes that are not up in {partition}: "
+				                     f"{compress_node_list(unavailable)}")
+		if not request.nodelist:
+			if nodelist or gpu_only:
+				what = "--nodelist" if nodelist else "--gpu-nodes"
+				request.error = f"No available nodes match {what} in partition {partition}"
+			else:
+				request.notes.append(f"No available {node_class} nodes in partition {partition}, "
+				                     "submitting without node restrictions")
+	elif exclude_weak:
+		request.exclude = select_nodes(partition, node_class="weak", state="any")
+	return request
 
 # Cluster topology: the hardware description from maxwell.tsv combined with live sinfo states
 
@@ -396,15 +626,8 @@ def get_live_node_states(partition=None):
 	partitions = partition_list(partition)
 	if partitions:
 		sinfo_cmd += ["-p", ",".join(partitions)]
-	try:
-		result = subprocess.run(sinfo_cmd, capture_output=True, text=True)
-	except OSError as e:
-		raise RuntimeError(f"Cannot run sinfo: {e}")
-	if result.returncode != 0:
-		messages = [line for line in result.stderr.splitlines() if line.strip()]
-		raise RuntimeError(f"sinfo failed: {messages[-1] if messages else f'exit code {result.returncode}'}")
 	states = {}
-	for line in result.stdout.splitlines():
+	for line in _run_slurm_query(sinfo_cmd, "node states").splitlines():
 		fields = line.split()
 		if len(fields) >= 2:
 			states.setdefault(fields[0], fields[1])	# A node in several partitions is listed once per partition
@@ -467,14 +690,16 @@ def _known_cpu_name(name, known):
 			return candidate
 	return name
 
-def hardware_from_features(features, table_row=None):
+def hardware_from_features(features, table_row=None, known_cpus=None):
 	"""CPU and GPU model from SLURM node features such as "EPYC, 7543, 512G, GPU, GPUx1, A100, A100-PCIE-40GB".
 
 	Returns (cpu, gpu_model, gpu_count_feature): names as used in maxwell.tsv and the GPU_*/CPU_*
 	lists where they can be matched, None where the features do not say. table_row (the node in
-	maxwell.tsv) resolves ambiguous GPU features.
+	maxwell.tsv) resolves ambiguous GPU features. known_cpus: CPU names to match (default CPU_ALL and
+	the CPUs of the node table if it is loaded).
 	"""
-	known_cpus = set(CPU_ALL) | {row["CPU"] for row in load_node_table()}
+	if known_cpus is None:
+		known_cpus = set(CPU_ALL) | {row["CPU"] for row in (_table_rows or [])}
 	tokens = [t.strip() for t in features.split(",") if t.strip() and t.strip() != "(null)"]
 	cpu = None
 	for i, token in enumerate(tokens):
@@ -529,8 +754,9 @@ def get_live_node_table(table=None):
 	if table is None:
 		table = load_node_table()
 	by_host = {row["Host"]: row for row in table}
+	known_cpus = set(CPU_ALL) | {row["CPU"] for row in table}	# Once per query, not per node
 	rows = {}
-	output = _run_slurm_query(["sinfo", "-a", "-N", "-h", "-o", SINFO_NODE_FORMAT])
+	output = _run_slurm_query(["sinfo", "-a", "-N", "-h", "-o", SINFO_NODE_FORMAT], "node features and states")
 	for line in output.splitlines():
 		fields = line.split("|")
 		if len(fields) < 8:
@@ -549,7 +775,7 @@ def get_live_node_table(table=None):
 				rows[host]["Partitions"].append(partition)
 			continue
 		known = by_host.get(host)
-		cpu, gpu_model, gpu_feature_count = hardware_from_features(features, known)
+		cpu, gpu_model, gpu_feature_count = hardware_from_features(features, known, known_cpus)
 		gpu_count = gres_gpu_count(gres)
 		if gpu_count is None:
 			gpu_count = gpu_feature_count
@@ -589,23 +815,19 @@ def export_topology(file_path, rows=None):
 
 	Default rows: the nodes SLURM reports, combined with the node table in use (SLURM values win, the
 	table fills FLOPS, warranty, hardware of nodes without features and ambiguous GPUs). Table nodes
-	that SLURM no longer reports are not written. Uses the cached query (init_node_cache()).
-	Raises RuntimeError when SLURM cannot be queried.
+	that SLURM does not report (e.g. display nodes) are kept as they are in the table, to be curated
+	by hand. Reuses the cached feature query if there is one. Raises RuntimeError when SLURM cannot
+	be queried.
 	"""
 	if rows is None:
 		init_node_cache()
-		if _live_rows is None:
-			raise RuntimeError(_live_error or "SLURM queries are switched off (set_node_table(live=False))")
-		rows = _live_rows
-	header = ["Host", "CPUCount", "CPUGFLOPS", "Memory", "GPU", "GPUFLOPS", "CPU", "Constraints", "Partitions", "Warranty"]
-	with open(file_path, "w") as f:
-		f.write("\t".join(header) + "\n")
-		for row in sorted(rows, key=lambda r: r["Host"]):
-			gpus = row["GPU"]
-			gpu = "+".join(f"{gpus.count(t)}x{t}" for t in sorted(set(gpus))) if gpus else "0"
-			values = dict(row, GPU=gpu, Partitions=" ".join(row["Partitions"]))
-			f.write("\t".join(str(values.get(k, "")) for k in header) + "\n")
-	return len(rows)
+		live_rows = _live_rows
+		if live_rows is None:
+			if not _use_live:
+				raise RuntimeError("SLURM queries are switched off (set_node_table(live=False))")
+			live_rows = get_live_node_table(load_node_table())
+		rows = _combined_rows(live_rows, load_node_table())
+	return write_node_table(file_path, rows)
 
 def _hardware_text(row):
 	gpus = row["GPU"]
@@ -650,6 +872,11 @@ def get_cluster_topology(partition=None, live=True, table_path=None):
 		if _use_live:
 			init_node_cache()	# The one sinfo query, shared with get_*_nodes()
 			live_rows, live_error = _live_rows, _live_error
+			if live_rows is None and live_error is None:	# Feature provider "list": light state query
+				try:
+					states = _light_node_states(partitions)
+				except RuntimeError as e:
+					live_error = str(e)
 		else:
 			live_error = "SLURM queries are switched off (set_node_table(live=False))"
 		if live_rows is not None:
@@ -720,8 +947,13 @@ def get_cluster_topology(partition=None, live=True, table_path=None):
 		"filled_from_table": filled,
 	}
 
-def format_cluster_topology(topology, verbose=False):
-	"""Human readable report of get_cluster_topology(); verbose adds one line per node."""
+def format_cluster_topology(topology, verbose=False, user=None, color=False):
+	"""Human readable report of get_cluster_topology(); verbose adds one line per node.
+
+	For a workload report, user (default: the current user) marks own jobs, in green with color=True.
+	"""
+	if user is None:
+		user = current_user()
 	nodes_by_host = {node["Host"]: node for node in topology["nodes"]}
 	live = topology["live_error"] is None and any(node["state"] is not None for node in topology["nodes"])
 
@@ -770,10 +1002,21 @@ def format_cluster_topology(topology, verbose=False):
 		lines.append(f"Up: {up}; states: " + ", ".join(f"{k} {v}" for k, v in sorted(states.items(), key=lambda kv: -kv[1])))
 	lines.append("")
 	if topology["gpu_types"]:
-		lines.append("GPU nodes by GPU type")
-		lines.append(f"  {'GPU type':<16} {header}  GPUs  Nodes")
+		lines.append("GPU nodes by GPU type (and by GPUs per node)")
+		lines.append(f"  {'GPU type':<22} {header}  GPUs  Nodes")
 		for gpu_type, info in sorted(topology["gpu_types"].items(), key=lambda kv: -len(kv[1]["nodes"])):
-			lines.append(f"  {gpu_type:<16} {count(info['nodes'])} {info['gpus']:5d}  {compress_node_list(info['nodes'])}")
+			per_node = {}
+			for host in info["nodes"]:
+				per_node.setdefault(nodes_by_host[host]["GPU"].count(gpu_type), []).append(host)
+			if len(per_node) == 1:
+				(n, hosts), = per_node.items()
+				label = f"{gpu_type} ({n}/node)"
+				lines.append(f"  {label:<22} {count(hosts)} {info['gpus']:5d}  {compress_node_list(hosts)}")
+				continue
+			lines.append(f"  {gpu_type:<22} {count(info['nodes'])} {info['gpus']:5d}")
+			for n, hosts in sorted(per_node.items(), key=lambda kv: -kv[0]):
+				label = f"  {n} GPU{'s' if n > 1 else ''}/node"
+				lines.append(f"  {label:<22} {count(hosts)} {n * len(hosts):5d}  {compress_node_list(hosts)}")
 		lines.append("")
 	if topology["cpu_types"]:
 		lines.append("Nodes without GPU by CPU type")
@@ -803,7 +1046,7 @@ def format_cluster_topology(topology, verbose=False):
 		lines.append(f"In sinfo but missing in {table_name} ({len(topology['not_described'])}): {compress_node_list(topology['not_described'])}")
 	if workload:
 		lines.append("")
-		lines.extend(_format_workload(topology, verbose))
+		lines.extend(_format_workload(topology, verbose, user, color))
 	if verbose:
 		lines.append("")
 		users_column = " Users (running jobs)" if workload else ""
@@ -814,19 +1057,31 @@ def format_cluster_topology(topology, verbose=False):
 			line = f"  {node['Host']:<16} {state:<8} {node['class']:<12} {node['Memory']:<8} {node['CPU']:<26} {gpus:<16} {' '.join(node['Partitions'])}"
 			if workload:
 				users = workload["node_users"].get(node["Host"], {})
-				line += "  " + (", ".join(f"{u}({n})" for u, n in sorted(users.items())) if users else "-")
+				line += "  " + (", ".join(_mark(f"{u}({n})", u == user, color) for u, n in sorted(users.items())) if users else "-")
+				if user in users:
+					line = _mark(">", True, color) + line[1:]	# Own jobs on this node
 			lines.append(line)
 	return "\n".join(lines)
 
 
 # Workload: topology plus idle nodes, the job queue and who runs where
 
-def _run_slurm_query(cmd):
-	"""stdout of a SLURM query command; RuntimeError with the last stderr line on failure."""
+QUERY_LOG = []	# (description, command, seconds) of every SLURM query of this process
+
+def format_query_log():
+	"""One line per SLURM query made so far: 'sinfo node features and states: 0.42 s'."""
+	return [f"SLURM query {cmd.split()[0]} ({what}): {seconds:.2f} s" for what, cmd, seconds in QUERY_LOG]
+
+def _run_slurm_query(cmd, description=None):
+	"""stdout of a SLURM query command, timed in QUERY_LOG; RuntimeError with the last stderr line on failure."""
+	import time
+	start = time.monotonic()
 	try:
 		result = subprocess.run(cmd, capture_output=True, text=True)
 	except OSError as e:
 		raise RuntimeError(f"Cannot run {cmd[0]}: {e}")
+	finally:
+		QUERY_LOG.append((description or cmd[0], " ".join(cmd), time.monotonic() - start))
 	if result.returncode != 0:
 		messages = [line for line in result.stderr.splitlines() if line.strip()]
 		raise RuntimeError(f"{cmd[0]} failed: {messages[-1] if messages else f'exit code {result.returncode}'}")
@@ -839,7 +1094,7 @@ def get_node_cpu_load(partition=None):
 	if partitions:
 		cmd += ["-p", ",".join(partitions)]
 	load = {}
-	for line in _run_slurm_query(cmd).splitlines():
+	for line in _run_slurm_query(cmd, "CPU load").splitlines():
 		fields = line.split()
 		if len(fields) >= 2 and fields[0] not in load:
 			try:
@@ -879,7 +1134,7 @@ def get_queue_jobs(partition=None):
 		pending_cmd += ["-p", ",".join(partitions)]
 	jobs = []
 	for cmd in (running_cmd, pending_cmd):
-		for line in _run_slurm_query(cmd).splitlines():
+		for line in _run_slurm_query(cmd, "jobs").splitlines():
 			fields = line.split("|")
 			if len(fields) < 7:
 				continue
@@ -971,7 +1226,21 @@ def _format_table_comparison(topology):
 		lines.append(f"  No hardware features in SLURM, taken from the table ({len(filled)}): {compress_node_list(filled)}")
 	return lines
 
-def _format_workload(topology, verbose):
+GREEN = "\033[32m"
+RESET = "\033[0m"
+
+def current_user():
+	"""Login name of the current user (for marking own jobs)."""
+	import getpass
+	try:
+		return getpass.getuser()
+	except Exception:
+		return os.environ.get("USER", "")
+
+def _mark(text, mine, color):
+	return f"{GREEN}{text}{RESET}" if mine and color else text
+
+def _format_workload(topology, verbose, user=None, color=False):
 	"""Workload section of format_cluster_topology()."""
 	workload = topology["workload"]
 	where = ",".join(topology["partitions"]) if topology["partitions"] else "all partitions"
@@ -1007,9 +1276,18 @@ def _format_workload(topology, verbose):
 	if partly:
 		free = sum(n["cpus_idle"] for n in partly)
 		lines.append(f"Partly used nodes with idle CPUs ({len(partly)}, {free} CPUs): {compress_node_list([n['Host'] for n in partly])}")
+	mine = workload["running_users"].get(user) if user else None
+	lines.append("")
+	if mine:
+		text = f"Your jobs ({user}): {mine['jobs']} running on {len(mine['nodes'])} nodes, {mine['pending']} pending"
+		if mine["nodes"]:
+			text += f": {compress_node_list(mine['nodes'])}"
+		lines.append(_mark(text, True, color))
+	else:
+		lines.append(f"Your jobs ({user}): none in these partitions")
 	if verbose and workload["running_users"]:
 		lines.append("")
 		lines.append(f"  {'User':<16} {'Running':>7} {'Nodes':>6} {'Pending':>8}")
-		for user, info in sorted(workload["running_users"].items(), key=lambda kv: (-len(kv[1]["nodes"]), -kv[1]["pending"], kv[0])):
-			lines.append(f"  {user:<16} {info['jobs']:7d} {len(info['nodes']):6d} {info['pending']:8d}")
+		for name, info in sorted(workload["running_users"].items(), key=lambda kv: (-len(kv[1]["nodes"]), -kv[1]["pending"], kv[0])):
+			lines.append(_mark(f"  {name:<16} {info['jobs']:7d} {len(info['nodes']):6d} {info['pending']:8d}", name == user, color))
 	return lines

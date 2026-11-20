@@ -19,11 +19,13 @@ setup(
     author_email='kulvait@gmail.com',
     # Needed to actually package something
     packages=find_packages(),
+    # Node table unpacked to ~/.laupy/maxwell.tsv on first use (laupy.maxwell)
+    package_data={"laupy": ["maxwell.tsv.gz"]},
     # Needed for dependencies
     install_requires=pkg_requires,
     entry_points={
     'console_scripts': [
-        'listnodes =  laupy.scripts.listMaxwellNodes:main',
+        'listnodes =  laupy.scripts.listMaxwellNodes:run',
         'submitslurm =  laupy.scripts.submitslurm:main',
         'kct-list =  laupy.scripts.kctList:main',
         'pipeline =  laupy.scripts.pipeline:main',

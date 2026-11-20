@@ -177,3 +177,45 @@ def print_arguments(ARG):
     print("Parsed arguments:")
     for arg_name, arg_value in vars(ARG).items():
         print(f"  {arg_name}: {arg_value}")
+
+
+def add_node_source_arguments(parser, offline=False):
+    """--list FILE, --no-list, --feature-provider (and --offline): where laupy.maxwell takes the nodes from."""
+    from laupy import maxwell
+    parser.add_argument("--list", metavar="FILE", dest="node_table",
+                        help="Node table (maxwell.tsv format) to use as it is instead of the app-managed one "
+                             f"(${maxwell.NODE_TABLE_ENV} or {maxwell.DEFAULT_NODE_TABLE})")
+    parser.add_argument("--no-list", action="store_true",
+                        help="Do not use any node table: the hardware comes from the SLURM node features only "
+                             "(implies --feature-provider slurm; a slower query)")
+    parser.add_argument("--feature-provider", choices=maxwell.FEATURE_PROVIDERS, default=None,
+                        help="Where the hardware (CPU/GPU models, classes) comes from. 'app-managed-list' (default): "
+                             f"the node table {maxwell.DEFAULT_NODE_TABLE}, unpacked from the laupy package or created "
+                             f"from SLURM when missing and refreshed from SLURM when older than "
+                             f"{maxwell.MANAGED_LIST_MAX_AGE_DAYS} days; SLURM is only asked for node states (fast). "
+                             "'list': the node table as it is, SLURM only for node states. 'slurm': the SLURM node "
+                             "features on every call (seconds), completed from the node table")
+    if offline:
+        parser.add_argument("--offline", action="store_true",
+                            help="Do not query SLURM: describe the node table alone")
+
+def apply_node_source_arguments(parser, args):
+    """Configure laupy.maxwell from add_node_source_arguments() options (parser.error on conflicts)."""
+    from laupy import maxwell
+    offline = getattr(args, "offline", False)
+    provider = args.feature_provider or maxwell.DEFAULT_FEATURE_PROVIDER
+    if args.no_list:
+        if args.node_table or offline or args.feature_provider not in (None, "slurm"):
+            others = "--list, --offline or a table feature provider" if hasattr(args, "offline") else "--list or a table feature provider"
+            parser.error(f"--no-list ignores node tables, it cannot be combined with {others}")
+        provider = "slurm"
+    if args.node_table and not os.path.isfile(os.path.expanduser(args.node_table)):
+        parser.error(f"--list: node table {args.node_table} does not exist")
+    maxwell.set_node_table(args.node_table, live=not offline, use_table=not args.no_list, feature_provider=provider)
+
+def print_node_notes(file=None):
+    """Print and clear laupy.maxwell.NODE_NOTES (node table installed, created, refreshed)."""
+    from laupy import maxwell
+    for note in maxwell.NODE_NOTES:
+        print(note, file=file)
+    maxwell.NODE_NOTES.clear()
