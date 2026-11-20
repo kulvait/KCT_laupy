@@ -10,6 +10,7 @@ import datetime
 import os
 import re
 import sys
+import threading
 import logging
 
 import redis
@@ -29,6 +30,9 @@ ch.setFormatter(formatter)
 # Add the handler to the logger
 log.addHandler(ch)
 log.propagate = False  # Prevent log messages from being propagated to the root logger
+
+# Seconds between checks of a waiting --get for GPUs held by processes that no longer exist (purgeWhileWaiting)
+WAIT_PURGE_INTERVAL = 30
 
 def buildParser():
 	parser = argparse.ArgumentParser(description="GPU management through Redis server")
@@ -346,6 +350,21 @@ def purgeNonexistentProcesses(rs, prefix):
 				LOG = "%s: GPU %s acquired by process with PID %d, was released by redis purge as the process with given PID does no longer exist."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i, PID)
 				rs.lpush("%s_EVENTS"%(prefix), LOG)
 
+def purgeWhileWaiting(make_client, prefix, stop):
+	"""Watcher thread of a waiting --get: every WAIT_PURGE_INTERVAL seconds, return the GPUs of holders that no
+	longer exist, until stop is set.
+
+	The waiting main thread stays in BRPOP and keeps its place in the queue; a GPU returned here goes to the process
+	that has waited longest. It uses its own Redis client (make_client), as a client must not be shared between
+	threads. Several waiters purging at the same time is harmless, returning a GPU is atomic (returnGPU).
+	"""
+	rs = make_client()
+	while not stop.wait(WAIT_PURGE_INTERVAL):
+		try:
+			purgeNonexistentProcesses(rs, prefix)
+		except redis.RedisError as e:
+			log.warning(f"Checking for GPUs of terminated processes failed: {e}")
+
 def main_with_discovery(argv=None):
 	# Parsing and validation
 	parser = buildParser()
@@ -529,9 +548,18 @@ def main_with_discovery(argv=None):
 			PID = ARG.pid
 		else:
 			PID = os.getppid()
-		GPUID = rs.brpop("%s_IDLE"%(ARG.redis_prefix), 0)
-		while True:
-			if GPUID is not None:
+		# Wait for an idle GPU without a timeout: Redis serves the clients blocked in BRPOP in arrival order, so the
+		# process that has waited longest gets the next free GPU. Meanwhile a watcher thread returns the GPUs of holders
+		# that ended without --release (see purgeWhileWaiting), so such a GPU does not stay lost forever.
+		stop_watcher = threading.Event()
+		watcher = threading.Thread(target=purgeWhileWaiting, daemon=True, args=(
+			lambda: redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=1,
+			                    socket_timeout=10, retry=Retry(NoBackoff(), 0), decode_responses=True),
+			ARG.redis_prefix, stop_watcher))
+		watcher.start()
+		try:
+			while True:
+				GPUID = rs.brpop("%s_IDLE"%(ARG.redis_prefix), 0)
 				ID = int(GPUID[1])
 				managedList = getManagedGPUs(rs, ARG.redis_prefix)
 				if ID in managedList:
@@ -541,7 +569,8 @@ def main_with_discovery(argv=None):
 					rs.hset("%s_GPU%d"%(ARG.redis_prefix, int(ID)), "TIME", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 					print(ID)
 					break
-			GPUID = rs.brpop("%s_IDLE"%(ARG.redis_prefix), 0)
+		finally:
+			stop_watcher.set()
 		return 0
 	
 	if ARG.release is not None:
