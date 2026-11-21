@@ -19,6 +19,8 @@ from redis.backoff import NoBackoff
 from redis.retry import Retry
 from termcolor import colored
 
+from laupy.redis_server import RedisLifecycleError, RedisManager, probe_client
+
 # Create a logger specific to this module
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)# Set the logging level to INFO
@@ -31,6 +33,9 @@ ch.setFormatter(formatter)
 # Add the handler to the logger
 log.addHandler(ch)
 log.propagate = False  # Prevent log messages from being propagated to the root logger
+# Warnings of laupy.redis_server (e.g. SIGKILL after SIGTERM when starting the server) through the same handler
+logging.getLogger("laupy.redis_server").addHandler(ch)
+logging.getLogger("laupy.redis_server").propagate = False
 
 # Seconds between checks of a waiting --get for GPUs held by processes that no longer exist (purgeWhileWaiting).
 # Every waiting process checks, so this is kept long; a crashed holder's GPU comes back within this time.
@@ -462,28 +467,24 @@ def main_with_discovery(argv=None):
 	rs = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=10, socket_timeout=None, decode_responses=True) #GPU acquisition might wait for a long time, so we set socket_timeout to None to avoid timeout errors
 	try:
 		# Quick check, if it fails we may try to start the server. A hung server accepts the connection but
-		# never answers, so the reply is limited to 3 s; retries are off because redis-py >= 6 retries
-		# timed-out commands by default (about 38 s instead of 3 s).
-		db = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=1,
-		                 socket_timeout=3, retry=Retry(NoBackoff(), 0), decode_responses=True)
+		# never answers, so the probe client gives up after a few seconds (see laupy.redis_server.probe_client).
+		db = probe_client(ARG.redis_server, ARG.redis_port, db=ARG.redis_db, decode_responses=True)
 		db.ping()
 	except (redis.ConnectionError, redis.TimeoutError) as e:
-		# Unreachable or hung: with --try-start-server, REDIS start sorts it out (or refuses, see its message)
+		# Unreachable or hung: with --try-start-server, starting the server sorts it out (or refuses, see its message)
 		log.warning(f"Can not connect to Redis server: {e}")
 		if ARG.try_start_server:
 			try:
 				log.info("Trying to start Redis server...")
-				# REDIS logs by default (timestamped in ./log); start it on the port this pool uses
-				CMD = ["REDIS", "start", "--port", str(ARG.redis_port)]
-				if ARG.kill_unresponsive_server:
-					CMD.append("--kill-unresponsive-server")
-				# REDIS start reports its configuration and status on stdout. Here that is a side note: GPU's stdout
-				# carries only results that scripts capture (e.g. N=$(GPU --redis-manage-all --try-start-server)
-				# must get just the GPU count), so the REDIS output goes to stderr, where the user still sees it.
-				subprocess.run(CMD, check=True, stdout=sys.stderr)
+				# Same as REDIS start --port <port> (laupy.redis_server, no dependency on REDIS being on PATH); logs
+				# by default (timestamped in ./log). Its messages are a side note here: GPU's stdout carries only
+				# results that scripts capture (e.g. N=$(GPU --redis-manage-all --try-start-server) must get just
+				# the GPU count), so they go to stderr, where the user still sees them.
+				manager = RedisManager(port=ARG.redis_port, out=lambda message: print(message, file=sys.stderr))
+				manager.start(kill_unresponsive=ARG.kill_unresponsive_server)
 				db.ping()	# Quick-check client: a server hanging right after start can not block us
 				log.info("Redis server started successfully.")
-			except subprocess.CalledProcessError as e:
+			except (RedisLifecycleError, OSError, subprocess.SubprocessError) as e:
 				log.error(f"Failed to start Redis server: {e}")
 				return 1
 			except (redis.ConnectionError, redis.TimeoutError):
