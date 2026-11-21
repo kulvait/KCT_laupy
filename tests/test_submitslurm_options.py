@@ -1,0 +1,114 @@
+"""laupy.submitslurm_options: same parser as submitslurm, splitting and merging calls.
+
+Run with: python -m pytest tests/test_submitslurm_options.py  (or python tests/test_submitslurm_options.py)
+"""
+import argparse
+import sys
+from unittest import mock
+
+from laupy import submitslurm_options as so
+
+
+class _Captured(Exception):
+    pass
+
+
+def submitslurm_parser():
+    """The parser submitslurm.main() builds (stopped at its parse_args call)."""
+    from laupy.scripts import submitslurm
+    captured = {}
+
+    def parse_args(self, args=None, namespace=None):
+        captured["parser"] = self
+        raise _Captured()
+    with mock.patch.object(argparse.ArgumentParser, "parse_args", parse_args), mock.patch.object(sys, "argv", ["submitslurm"]):
+        try:
+            submitslurm.main()
+        except _Captured:
+            pass
+    return captured["parser"]
+
+
+def describe(parser):
+    return [(tuple(a.option_strings), a.dest, a.nargs, a.default, tuple(a.choices or ()), type(a).__name__, a.help)
+            for a in parser._actions]
+
+
+def test_same_parser_as_submitslurm():
+    assert describe(so.build_parser()) == describe(submitslurm_parser())
+
+
+def test_categories():
+    specs = {spec.dest: spec for spec in so.option_specs()}
+    assert specs["slurmargs"].category == "call"
+    assert specs["clean_dag"].category == "action"
+    assert specs["vanilla"].category == "context" and specs["vanilla"].kind == "flag"
+    assert specs["skip_state"].kind == "multi_choice"
+    assert specs["env"].kind == "append"
+    assert specs["partition"].name == "--partition"
+
+
+def test_split_arguments():
+    groups = so.split_arguments(["--pipeline-step", "7", "-a", "--bin 2 a b", "--skip-state", "FAILED", "RUNNING",
+                                 "--partition=allgpu", "-fcpu", "--env", "A=-x", "--vanilla", "00bin.sbatch"])
+    assert [(g.dest, g.tokens) for g in groups] == [
+        ("pipeline_step", ["--pipeline-step", "7"]), ("slurmargs", ["-a", "--bin 2 a b"]),
+        ("skip_state", ["--skip-state", "FAILED", "RUNNING"]), ("partition", ["--partition=allgpu"]),
+        ("partition", ["-fcpu"]), ("env", ["--env", "A=-x"]), ("vanilla", ["--vanilla"]), (None, ["00bin.sbatch"])]
+
+
+def test_merge_arguments():
+    defaults = {"partition": ["--partition", "allgpu"], "vanilla": ["--vanilla"], "env": ["--env", "A=1"],
+                "working_dir": ["--working-dir", "wd"]}
+    call = ["-f", "cpu", "-w", "wd2", "--env", "A=2", "s.sbatch"]
+    merged = so.merge_arguments(call, defaults, forced={"partition"}, extra=["--verbose"])
+    assert merged == ["--partition", "allgpu", "--vanilla", "--env", "A=1", "--verbose", "-w", "wd2", "--env", "A=2", "--", "s.sbatch"]
+    args = so.parse_merged(merged)
+    assert args.partition == "allgpu" and args.vanilla and dict(args.env)["A"] == "2" and args.working_dir == [["wd2"]]
+
+
+def test_merge_multi_value_before_script():
+    merged = so.merge_arguments(["s.sbatch", "--pipeline-step", "3"], {"skip_state": ["--skip-state", "FAILED"]})
+    args = so.parse_merged(merged)
+    assert args.skip_state == ["FAILED"] and args.scriptName == "s.sbatch" and args.pipeline_step == "3"
+
+
+def test_parse_merged_raises():
+    try:
+        so.parse_merged(["--skip-range", "bad"])
+    except ValueError as e:
+        assert "skip-range" in str(e)
+    else:
+        raise AssertionError("no error")
+
+
+def test_preview_vanilla(tmp_path):
+    (tmp_path / "sbatch").mkdir()
+    args = so.parse_merged(["--vanilla", "--job-path", "/opt/tools", "--env", "OMP_NUM_THREADS=8", "s.sbatch"])
+    preview = so.preview_environment(args, tmp_path, global_env={"PATH": "/usr/bin", "LAUPY_PYTHON": "/x"})
+    assert not preview.inherits
+    assert [d for d, _ in preview.path][:3] == [str(tmp_path / "bin"), str(tmp_path / "sbatch"), "/opt/tools"]
+    assert "LAUPY_PYTHON" not in preview.variables          # the shell's value is not used with --vanilla
+    assert preview.variables["OMP_NUM_THREADS"] == ("8", "--env OMP_NUM_THREADS")
+    assert preview.export.startswith("--export=PATH=")
+
+
+def test_preview_inherited(tmp_path):
+    args = so.parse_merged(["--job-path", "/opt/tools", "s.sbatch"])
+    preview = so.preview_environment(args, tmp_path, global_env={"PATH": "/usr/bin:/bin"})
+    assert preview.inherits
+    assert preview.path == [("/opt/tools", "--job-path"), ("/usr/bin", "inherited"), ("/bin", "inherited")]
+    assert preview.export.startswith("--export=ALL,")
+
+
+if __name__ == "__main__":
+    import tempfile
+    from pathlib import Path
+    for name, test in sorted(globals().items()):
+        if name.startswith("test_"):
+            if "tmp_path" in test.__code__.co_varnames[:test.__code__.co_argcount]:
+                with tempfile.TemporaryDirectory() as d:
+                    test(Path(d))
+            else:
+                test()
+            print("ok", name)

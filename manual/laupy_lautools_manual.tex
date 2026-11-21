@@ -629,6 +629,37 @@ The row \ui{submitslurm context: -w \_\_ -p \_\_ -f \_\_} sets default values fo
 
 An option given explicitly in the command wins, unless its \ui{force} box is ticked.
 
+The \ui{Context\ldots} button next to them opens the submission context editor; a summary of
+what it adds is shown in the row (hover for the exact options). Its tabs:
+\begin{itemize}
+  \item \ui{Options}: every \cmd{submitslurm} option that applies to all submissions, generated
+    from the \cmd{submitslurm} parser (\cmd{laupy.submitslurm\_options}), with its help as tooltip.
+    Each has a mode: \ui{off}, \ui{default} (used when the call does not give the option) or
+    \ui{force} (replaces the call's value); flags are \ui{off}/\ui{on}. Per-call options
+    (\cmd{-a}, \cmd{-{}-pipeline-step}, \cmd{-{}-dependencies}, the script) and the pipeline maintenance
+    actions are not offered. \cmd{-w}, \cmd{-p}, \cmd{-f} are the same settings as in the row.
+    \cmd{-{}-job-path}, when off, defaults to the directories of the project PATH settings (the
+    configured ones, not the \cmd{PATH} lautools was started with). \cmd{-{}-python} is checked for
+    \cmd{bin/python}; a \cmd{-{}-python} in the call always wins over a default.
+  \item \ui{Free text}: further arguments added to every call (shell quoting).
+  \item \ui{Job environment}: what a job would get, computed as \cmd{submitslurm} does: whether it
+    inherits the console environment or is \cmd{-{}-vanilla}, the \cmd{PATH} directory by directory
+    with its source (\cmd{ROOT/bin}, SLURM script directory, \cmd{-{}-job-path}, \cmd{initGanrec},
+    system, inherited; missing directories in red), the variables with their source, and the
+    resulting \cmd{-{}-export}. The \cmd{PATH} can be edited (add, remove, reorder, edit); it is
+    then exported as \cmd{-{}-env PATH=\ldots} instead of \cmd{-{}-job-path} until
+    \ui{Reset to computed}. Variable values can be changed and variables added; they are passed as
+    \cmd{-{}-env NAME=VALUE} (a call's own \cmd{-{}-env} of the same name wins). The per-job variables
+    (\cmd{PIPELINE\_*}, \cmd{LD\_PRELOAD}) are fixed.
+\end{itemize}
+Below the tabs, an example call (editable) is shown merged with the context; the environment
+tab refers to it. Errors (e.g.\ a value \cmd{submitslurm} would reject) disable \ui{OK}.
+
+In the console, \cmd{submitslurm} is a shell function: it passes the call to lautools, which
+merges it with the context using the \cmd{submitslurm} parser, prints the result
+(\cmd{+ submitslurm \ldots}) and runs the real \cmd{submitslurm}. Context options come first, then
+the call's options, then its script after \cmd{-{}-}. The context is kept for the session.
+
 \subsection{Status tab: live job status}\label{sec:status}
 
 The \ui{Status} tab shows every pipeline entry of the current working directory as a tree.
@@ -796,7 +827,7 @@ submitslurm [options] [--pipeline-step NODE [--dependencies NODE,...]] SCRIPT.sb
 Option & Meaning \\
 \midrule
 \endhead
-\cmd{-a, -{}-slurmargs "ARGS"} & Arguments passed to the script after the subdir. Quote them as one string. \\
+\cmd{-a, -{}-slurmargs "ARGS"} & Arguments passed to the script after the subdir. Quote them as one string; it may start with \cmd{-{}-} (e.g.\ \cmd{-a "-{}-bin 2 a.den b.den"} or \cmd{-a "-{}-verbose"}). The same holds for \cmd{-{}-env} values. \\
 \cmd{-f, -{}-partition P} & SLURM partition(s). Default \cmd{allcpu,allgpu}. \\
 \cmd{-g, -{}-gpu-nodes} & Only nodes with GPUs. \\
 \cmd{-e, -{}-excellent-nodes} & Only the best (A100+) nodes. \\
@@ -807,6 +838,8 @@ Option & Meaning \\
 \cmd{-{}-list FILE}, \cmd{-{}-no-list} & Use this node table as it is, or no table at all (hardware from SLURM only). \\
 \cmd{-o, -{}-oversubscribe} & Allow sharing nodes. \\
 \cmd{-t, -{}-delaytime S} & Wait S seconds between submissions. \\
+\cmd{-{}-job-path DIR[:DIR\ldots]} & Directories for the PATH of the jobs, exported explicitly (see \emph{Environment of the jobs}). \\
+\cmd{-{}-vanilla} & Do not propagate the submitting environment; export only explicit variables (see \emph{Environment of the jobs}). \\
 \cmd{-{}-python PATH} & Python (Conda/Mamba) environment of the jobs, exported as \cmd{LAUPY\_PYTHON} and recorded in the entries (see \emph{Environment of the jobs}). \\
 \cmd{-{}-env NAME=VALUE} & Extra environment variable for every job (repeatable; no commas in VALUE). \\
 \cmd{-{}-pipeline-step NODE} & DAG node: a step number, a name, or \cmd{-1} (default, outside the DAG). \\
@@ -848,8 +881,8 @@ environment, and so on. On top of it, every job gets
 \end{itemize}
 \cmd{LAUPY\_PYTHON} is the path of a Conda/Mamba environment; \cmd{initGanrec} activates it instead of
 its default environment. \cmd{submitslurm} takes it from \cmd{-{}-python PATH}, else from
-\cmd{-{}-env LAUPY\_PYTHON=PATH}, else from \cmd{LAUPY\_PYTHON} of the submitting shell (giving both
-\cmd{-{}-python} and a different \cmd{-{}-env LAUPY\_PYTHON} is an error). The path must be a
+\cmd{-{}-env LAUPY\_PYTHON=PATH}, else from \cmd{LAUPY\_PYTHON} of the submitting shell. \cmd{-{}-python}
+always wins: a different \cmd{-{}-env LAUPY\_PYTHON} only gives a warning. The path must be a
 directory with an executable \cmd{bin/python} and is made absolute. It is then exported explicitly
 to every job and recorded in the pipeline entry (\cmd{laupy\_python}), so a resubmission, e.g.\
 from \cmd{lautools}, uses the same environment whatever the resubmitting process has set. Without
@@ -857,6 +890,31 @@ it, jobs use the default environment of \cmd{initGanrec}, and so do their resubm
 \begin{lstlisting}
 $ submitslurm --python ~/.conda/envs/test --pipeline-step 5 05reconstructCGLS.sbatch
 \end{lstlisting}
+\cmd{lautools} never passes its own \cmd{LAUPY\_PYTHON} on: it is removed from the environment of the
+scripts run in the pipeline tab and of resubmissions, so there only \cmd{-{}-python} (or
+\cmd{-{}-env LAUPY\_PYTHON=}) written in the script counts.
+
+\cmd{-{}-vanilla} isolates the jobs from the user environment: \cmd{-{}-export} lists the variables
+without \cmd{ALL}, so a job gets only \cmd{SLURM\_*} and these explicit variables:
+\begin{itemize}
+  \item \cmd{PATH}: \cmd{ROOT/bin}, the SLURM script directory (\cmd{-{}-slurm-dir}), the directory of
+    \cmd{initGanrec} as found on the submitting \cmd{PATH} (so the recipes can \cmd{source initGanrec};
+    a warning is printed if it is not found) and \cmd{/usr/local/bin:/usr/bin:/bin};
+  \item \cmd{HOME}, \cmd{USER}, \cmd{LOGNAME} of the submitting user;
+  \item \cmd{PIPELINE\_SCRIPTNAME}, \cmd{PIPELINE\_JOBNAME}, \cmd{LD\_PRELOAD=} as usual;
+  \item \cmd{-{}-env} variables and \cmd{LAUPY\_PYTHON} from \cmd{-{}-python} (or
+    \cmd{-{}-env LAUPY\_PYTHON=}); \cmd{LAUPY\_PYTHON} of the submitting shell is not used.
+\end{itemize}
+The job sets up everything else itself (\cmd{source initGanrec}). The list is printed at submission
+and stored in \cmd{slurm\_command}, so a resubmission gets the same. Use it to test submissions
+independently of the user environment.
+
+\cmd{-{}-job-path DIR[:DIR\ldots]} sets the directories the jobs find their programs in, explicitly:
+with \cmd{-{}-vanilla} they follow \cmd{ROOT/bin} and the SLURM script directory (before the
+\cmd{initGanrec} directory and the system ones); without it they are put before the inherited
+\cmd{PATH} as an explicit \cmd{PATH=} export. Missing directories give a warning;
+\cmd{-{}-env PATH=} together with \cmd{-{}-job-path} is an error. \cmd{lautools} passes the
+directories of the project PATH settings here by default (see \emph{submitslurm context}).
 Use \cmd{-{}-verbose} to print the inherited \cmd{CONDA\_PREFIX} and \cmd{PATH} (duplicates and
 missing directories are flagged), the per-job variables and the full \cmd{sbatch} command.
 

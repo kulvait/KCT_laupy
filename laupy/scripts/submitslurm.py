@@ -8,7 +8,7 @@ from laupy import maxwell
 import shlex
 import shutil
 import logging
-from laupy.cli import LAUPY_PYTHON, SubmissionEnvironment, vanilla_base_variables, check_python_environment, parse_python_environment, add_common_arguments, add_node_source_arguments, apply_node_source_arguments, print_node_notes, parse_comma_separated, parse_env_assignment, print_arguments, resolve_directory_tree
+from laupy.cli import LAUPY_PYTHON, join_dash_values, SubmissionEnvironment, job_path_variable, parse_job_path, vanilla_base_variables, check_python_environment, parse_python_environment, add_common_arguments, add_node_source_arguments, apply_node_source_arguments, print_node_notes, parse_comma_separated, parse_env_assignment, print_arguments, resolve_directory_tree
 from laupy.pipeline_entries import PipelineEntriesStore, select_pipeline_entries, retire_pipeline_entries, cancel_pipeline_entries
 from laupy.flow import SchedulingError, clean_pipeline_entries, remove_pipeline_dir, schedule_slurm_job
 from laupy.slurm import run_slurm_command
@@ -91,6 +91,7 @@ def main():
     parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
     add_node_source_arguments(parser)
     parser.add_argument("--vanilla", action="store_true", help=f"Do not propagate the submitting environment to the jobs (--export without ALL). A job gets only SLURM_* and explicit variables: PATH (ROOT/bin, the SLURM script directory, the directory of initGanrec, /usr/local/bin:/usr/bin:/bin), HOME, USER, LOGNAME, PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME, LD_PRELOAD=, --env and --python ({LAUPY_PYTHON} of the submitting shell is not used). To test submissions independently of the user environment.")
+    parser.add_argument("--job-path", type=parse_job_path, metavar="DIR[:DIR...]", help="Directories for the PATH of the jobs, exported explicitly: with --vanilla after ROOT/bin and the SLURM script directory, otherwise before the inherited PATH. Shown with --verbose.")
     parser.add_argument("--python", type=parse_python_environment, metavar="PATH", help=f"Python (Conda/Mamba) environment of the jobs: exported as {LAUPY_PYTHON}=PATH, which initGanrec activates instead of its default, and recorded in the pipeline entry so resubmissions use it too. Without --python, {LAUPY_PYTHON} of the submitting shell is used if set.")
     parser.add_argument("--env", type=parse_env_assignment, action="append", default=[], metavar="NAME=VALUE", help="Set an environment variable for every submitted job (repeatable); overrides the defaults PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME and LD_PRELOAD=. Shown with --verbose.")
     scheduling_group = parser.add_mutually_exclusive_group()
@@ -110,7 +111,8 @@ def main():
     parser.add_argument("scriptName", type=str, nargs="?", help="Script to execute in each working directory")
 
     # Parse the arguments
-    ARG = parser.parse_args()
+    # -a "--bin 2 ..." / --env A=-x: values starting with "-" are joined to their option first
+    ARG = parser.parse_args(join_dash_values(sys.argv[1:]))
     print(f"submitslurm with parameters: {quote_command(sys.argv[1:])}")
     # Environment of the jobs: inherited global environment + per-job variables
     ENVIRONMENT = SubmissionEnvironment(extra=dict(ARG.env), vanilla=ARG.vanilla)
@@ -118,7 +120,9 @@ def main():
     # (not with --vanilla, which takes nothing from the submitting environment).
     # It is always exported explicitly and recorded in the entries, so a resubmission is exact.
     if ARG.python is not None and ENVIRONMENT.extra.get(LAUPY_PYTHON, ARG.python) != ARG.python:
-        parser.error(f"--python {ARG.python} conflicts with --env {LAUPY_PYTHON}={ENVIRONMENT.extra[LAUPY_PYTHON]}")
+        print(f"WARNING: --python {ARG.python} overrides --env {LAUPY_PYTHON}={ENVIRONMENT.extra[LAUPY_PYTHON]}", file=sys.stderr)
+    if ARG.job_path and "PATH" in ENVIRONMENT.extra:
+        parser.error("--job-path and --env PATH=... both set the PATH of the jobs; use one")
     if ARG.python is not None:
         LAUPY_PYTHON_VALUE, LAUPY_PYTHON_SOURCE = ARG.python, "--python"
     elif ENVIRONMENT.extra.get(LAUPY_PYTHON):
@@ -145,7 +149,7 @@ def main():
     directory_tree = resolve_directory_tree(ARG)
     if ARG.vanilla:
         try:
-            ENVIRONMENT.base = vanilla_base_variables(directory_tree.root, directory_tree.sbatch_abs, ENVIRONMENT.global_env)
+            ENVIRONMENT.base = vanilla_base_variables(directory_tree.root, directory_tree.sbatch_abs, ENVIRONMENT.global_env, ARG.job_path)
         except ValueError as e:
             parser.error(f"--vanilla: {e}")
         print("Vanilla submission: the submitting environment is not propagated; every job gets only SLURM_* and")
@@ -154,6 +158,15 @@ def main():
         print("    plus PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME, LD_PRELOAD=" + (", " + ", ".join(ENVIRONMENT.extra) if ENVIRONMENT.extra else ""))
         if not shutil.which("initGanrec", path=ENVIRONMENT.base["PATH"]):
             print("    WARNING: initGanrec is not on this PATH; recipes that source it will fail", file=sys.stderr)
+    elif ARG.job_path:
+        try:
+            ENVIRONMENT.extra["PATH"] = job_path_variable(ARG.job_path, ENVIRONMENT.global_env)
+        except ValueError as e:
+            parser.error(f"--job-path: {e}")
+        print(f"Job PATH: {os.pathsep.join(ARG.job_path)} before the inherited PATH (exported explicitly)")
+    for directory in ARG.job_path or []:
+        if not os.path.isdir(directory):
+            print(f"WARNING: --job-path directory does not exist: {directory}", file=sys.stderr)
 
     #If --partition is not set by the user and --gpu-nodes is requested, set partition to "allgpu"
     partition_was_user_set = any(arg in ("-f", "--partition") for arg in sys.argv)

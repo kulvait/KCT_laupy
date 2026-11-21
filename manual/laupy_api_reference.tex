@@ -678,18 +678,33 @@ directory is missing or nothing matches; prints nothing otherwise.
 \api{@dataclass ProcessingUnitSubdir(name, abs, rel)}
 Directory name, resolved absolute path, path relative to the root (e.g.\ \cmd{wd/syn001}).
 
-\api{@dataclass SubmissionEnvironment(global\_env=os.environ copy, extra=\{\})}
+\api{@dataclass SubmissionEnvironment(global\_env=os.environ copy, extra=\{\}, vanilla=False)}
 Environment of submitted jobs in two layers. \cmd{global\_env} is the environment \cmd{sbatch}
 runs with; every job inherits it through \cmd{-{}-export=ALL}. \cmd{extra} holds additional
 per-job variables (\cmd{submitslurm -{}-env}).
 \begin{description}[leftmargin=2em,font=\ttfamily\mdseries]
   \item[job\_vars(script\_name, job\_name) -> dict] \cmd{PIPELINE\_SCRIPTNAME},
     \cmd{PIPELINE\_JOBNAME}, \cmd{LD\_PRELOAD=""}, then \cmd{extra} (which may override them).
-  \item[export\_option(job\_vars) -> str] \cmd{"-{}-export=ALL,NAME=VALUE,\ldots"}.
+  \item[export\_option(job\_vars) -> str] \cmd{"-{}-export=ALL,NAME=VALUE,\ldots"}, without \cmd{ALL} if \cmd{vanilla}.
   \item[describe\_job\_vars(job\_vars) -> str] Shell-quoted \cmd{NAME=VALUE} list for display.
   \item[global\_lines() -> list[str]] \cmd{CONDA\_PREFIX} and \cmd{PATH} of \cmd{global\_env} for
     display, see \cmd{environment\_lines()}.
 \end{description}
+With \cmd{vanilla=True} (\cmd{submitslurm -{}-vanilla}), \cmd{global\_env} is not propagated:
+\cmd{export\_option()} lists the variables without \cmd{ALL}, and \cmd{job\_vars()} starts with the
+\cmd{base} variables (field \cmd{base}, a dict; set it from \cmd{vanilla\_base\_variables()}) before
+the usual ones. \cmd{export\_option()} is an instance method.
+
+\api{vanilla\_base\_variables(root, sbatch\_dir, global\_env=None, job\_path=None) -> dict}
+\cmd{PATH} (\cmd{root/bin}, \cmd{sbatch\_dir}, the \cmd{job\_path} directories, the directory of \cmd{initGanrec} found on the \cmd{PATH}
+of \cmd{global\_env} or \cmd{os.environ}, \cmd{VANILLA\_SYSTEM\_PATH}), \cmd{HOME}, \cmd{USER},
+\cmd{LOGNAME} (password database; \cmd{Path.home()}/\cmd{getpass.getuser()} if the UID has no entry).
+\raises \cmd{ValueError} if a value contains a comma.
+
+\api{parse\_job\_path(value) -> list[str]\quad job\_path\_variable(job\_path, global\_env=None) -> str}
+\cmd{argparse} type of \cmd{submitslurm -{}-job-path}: the colon-separated directories made absolute
+(no comma). \cmd{job\_path\_variable()} gives the \cmd{PATH} of a non-vanilla job: \cmd{job\_path}
+before the inherited \cmd{PATH}, without duplicates (\cmd{ValueError} if that contains a comma).
 
 \api{environment\_lines(env, indent="    ") -> list[str]}
 \cmd{CONDA\_PREFIX} and the \cmd{PATH} components, one per line; components below
@@ -700,6 +715,11 @@ Absolute path of a Conda/Mamba environment (a directory with executable \cmd{bin
 \cmd{LAUPY\_PYTHON}; the first raises \cmd{ValueError}, the second is the \cmd{argparse} type of
 \cmd{submitslurm -{}-python}. \cmd{cli.LAUPY\_PYTHON} is the variable name.
 
+\api{join\_dash\_values(argv, options=DASH\_VALUE\_OPTIONS) -> list[str]}
+Rewrites \cmd{-a VALUE}, \cmd{-{}-slurmargs VALUE} and \cmd{-{}-env VALUE} as \cmd{-{}-long=VALUE} before
+\cmd{argparse}, so a value starting with \cmd{-} (\cmd{-a "-{}-verbose"}) is not taken for an option.
+Tokens after \cmd{-{}-} are left alone. \cmd{submitslurm} applies it to \cmd{sys.argv}.
+
 \api{parse\_env\_assignment(value) -> (str, str)\quad parse\_comma\_separated(value) -> list[str]}
 \cmd{argparse} types: \cmd{NAME=VALUE} (no commas in the value, since \cmd{-{}-export} separates
 with commas) and \cmd{"a,b,c"} $\rightarrow$ \cmd{["a", "b", "c"]}.
@@ -708,6 +728,42 @@ with commas) and \cmd{"a,b,c"} $\rightarrow$ \cmd{["a", "b", "c"]}.
 Print the parsed arguments (\cmd{-{}-verbose}).
 
 % ======================================================================
+\section{\texorpdfstring{\cmd{laupy.submitslurm\_options}}{laupy.submitslurm\_options}}
+
+The \cmd{submitslurm} option set as a component for programs that compose \cmd{submitslurm} calls
+(the lautools submission context editor). \cmd{submitslurm} does not use it yet;
+\cmd{build\_parser()} is kept identical to its parser, which \cmd{tests/test\_submitslurm\_options.py}
+checks.
+
+\api{build\_parser() -> argparse.ArgumentParser}
+The \cmd{submitslurm} parser.
+
+\api{option\_specs(parser=None) -> list[OptionSpec]\quad context\_option\_specs(parser=None) -> list[OptionSpec]}
+Every option (without help and positional), or only those of category \cmd{"context"}.
+\cmd{OptionSpec} has \cmd{dest}, \cmd{option\_strings}, \cmd{name} (the long string), \cmd{kind}
+(\cmd{flag}, \cmd{value}, \cmd{choice}, \cmd{multi\_choice}, \cmd{append}), \cmd{category}
+(\cmd{context}, \cmd{call}: \cmd{CALL\_DESTS}, \cmd{action}: \cmd{ACTION\_DESTS}), \cmd{help},
+\cmd{metavar}, \cmd{choices}, \cmd{default}.
+
+\api{split\_arguments(argv, parser=None) -> list[ArgumentGroup]}
+The call split into options with their values (\cmd{dest}, \cmd{tokens}) as \cmd{argparse} reads it;
+handles \cmd{-{}-opt=value}, \cmd{-fVALUE} and dashed values of \cmd{-a}/\cmd{-{}-env}. Other tokens are
+groups with \cmd{dest=None}.
+
+\api{merge\_arguments(call, defaults=None, forced=frozenset(), extra=(), parser=None) -> list[str]}
+\cmd{defaults} maps a \cmd{dest} to its tokens; they are used when the call lacks the option, or
+always for \cmd{forced} dests (the call's own are dropped) and for \cmd{MERGED\_DESTS} (\cmd{env}: the
+call's later \cmd{-{}-env} wins per name). Result: context tokens, \cmd{extra}, the call's options,
+then its positional arguments after \cmd{-{}-} (so \cmd{-{}-skip-state FAILED} cannot take the script).
+
+\api{parse\_merged(argv, parser=None) -> argparse.Namespace}
+Parses like \cmd{submitslurm} (with \cmd{join\_dash\_values}); raises \cmd{ValueError} instead of exiting.
+
+\api{preview\_environment(args, root, global\_env=None, script\_name="SCRIPT.sbatch", job\_name="SCRIPT\_UNIT") -> EnvironmentPreview}
+The environment a job would get: \cmd{variables} (name $\rightarrow$ (value, source)), \cmd{path}
+(list of (directory, source)), \cmd{export}, \cmd{inherits} (\cmd{-{}-export=ALL}) and \cmd{warnings}.
+Computed with the same \cmd{laupy.cli} functions as \cmd{submitslurm}.
+
 \section{\texorpdfstring{\cmd{laupy.graph\_utils}}{laupy.graph\_utils}}
 % ======================================================================
 

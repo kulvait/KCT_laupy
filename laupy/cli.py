@@ -132,6 +132,31 @@ def environment_lines(env: Mapping[str, str], indent: str = "    ") -> List[str]
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+# Options whose value may itself start with "-" (script arguments, environment values)
+DASH_VALUE_OPTIONS = {"-a": "--slurmargs", "--slurmargs": "--slurmargs", "--env": "--env"}
+
+
+def join_dash_values(argv: List[str], options: Mapping[str, str] = DASH_VALUE_OPTIONS) -> List[str]:
+    """Join each option of `options` with its following value as --long=VALUE.
+
+    argparse takes a value starting with "-" (e.g. -a "--verbose") for an option and fails;
+    in the --long=VALUE form the value is never parsed. Tokens after "--" are left alone.
+    """
+    result, i = [], 0
+    while i < len(argv):
+        token = argv[i]
+        if token == "--":
+            result.extend(argv[i:])
+            break
+        if token in options and i + 1 < len(argv):
+            result.append(f"{options[token]}={argv[i + 1]}")
+            i += 2
+            continue
+        result.append(token)
+        i += 1
+    return result
+
+
 def parse_env_assignment(value: str):
     """argparse type for --env NAME=VALUE."""
     name, sep, val = value.partition("=")
@@ -212,18 +237,44 @@ class SubmissionEnvironment:
 VANILLA_SYSTEM_PATH = ["/usr/local/bin", "/usr/bin", "/bin"]
 
 
-def vanilla_base_variables(root, sbatch_dir, global_env: Mapping[str, str] = None) -> Dict[str, str]:
+def parse_job_path(value: str) -> List[str]:
+    """argparse type for submitslurm --job-path DIR[:DIR...]: absolute directories, in order."""
+    directories = []
+    for directory in value.split(os.pathsep):
+        if not directory:
+            continue
+        directory = os.path.abspath(os.path.expanduser(directory))
+        if "," in directory:
+            # sbatch --export separates variables by commas
+            raise argparse.ArgumentTypeError(f"directory must not contain a comma (sbatch --export uses commas as separator): {directory}")
+        directories.append(directory)
+    return directories
+
+
+def job_path_variable(job_path: List[str], global_env: Mapping[str, str] = None) -> str:
+    """PATH of a non-vanilla job with --job-path: the job path directories before the inherited PATH.
+
+    Raises ValueError if the inherited PATH contains a comma (the --export separator).
+    """
+    inherited = (global_env if global_env is not None else os.environ).get("PATH", "")
+    if "," in inherited:
+        raise ValueError("the inherited PATH contains a comma (sbatch --export uses commas as separator)")
+    return os.pathsep.join(dict.fromkeys(job_path + [d for d in inherited.split(os.pathsep) if d]))
+
+
+def vanilla_base_variables(root, sbatch_dir, global_env: Mapping[str, str] = None, job_path: List[str] = None) -> Dict[str, str]:
     """Variables a --vanilla job gets besides the per-job ones.
 
-    PATH: root/bin, the SLURM script directory, the directory of initGanrec (looked up on
-    the PATH of global_env, so the recipes can `source initGanrec`) and the system directories.
+    PATH: root/bin, the SLURM script directory, the job_path directories (--job-path), the
+    directory of initGanrec (looked up on the PATH of global_env, so the recipes can
+    `source initGanrec`) and the system directories.
     HOME, USER, LOGNAME: from the password database of the submitting user (if the UID has no
     entry, from Path.home() and getpass.getuser()).
     Raises ValueError if a value contains a comma (the --export separator).
     """
     import pwd
     import shutil
-    path = [str(Path(root) / "bin"), str(sbatch_dir)]
+    path = [str(Path(root) / "bin"), str(sbatch_dir)] + list(job_path or [])
     init_ganrec = shutil.which("initGanrec", path=(global_env if global_env is not None else os.environ).get("PATH", ""))
     if init_ganrec:
         path.append(os.path.dirname(os.path.abspath(init_ganrec)))
