@@ -179,25 +179,67 @@ class SubmissionEnvironment:
     job_vars(): variables set per job on top of it: PIPELINE_SCRIPTNAME,
         PIPELINE_JOBNAME, LD_PRELOAD (cleared) and the `extra` ones
         (submitslurm --env NAME=VALUE), which may override the defaults.
+    vanilla: the environment of this process is not propagated (--export
+        without ALL): a job gets only SLURM_* and the variables listed
+        explicitly, the `base` ones (see vanilla_base_variables()) followed
+        by the per-job ones (submitslurm --vanilla).
     """
     global_env: Dict[str, str] = field(default_factory=lambda: dict(os.environ))
     extra: Dict[str, str] = field(default_factory=dict)
+    vanilla: bool = False
+    base: Dict[str, str] = field(default_factory=dict)
 
     def job_vars(self, script_name: str, job_name: str) -> Dict[str, str]:
-        variables = {"PIPELINE_SCRIPTNAME": script_name, "PIPELINE_JOBNAME": job_name, "LD_PRELOAD": ""}
+        variables = dict(self.base) if self.vanilla else {}
+        variables.update({"PIPELINE_SCRIPTNAME": script_name, "PIPELINE_JOBNAME": job_name, "LD_PRELOAD": ""})
         variables.update(self.extra)
         return variables
 
-    @staticmethod
-    def export_option(job_vars: Mapping[str, str]) -> str:
-        return "--export=ALL," + ",".join(f"{name}={value}" for name, value in job_vars.items())
+    def export_option(self, job_vars: Mapping[str, str]) -> str:
+        listed = [f"{name}={value}" for name, value in job_vars.items()]
+        return "--export=" + ",".join(listed if self.vanilla else ["ALL"] + listed)
 
     @staticmethod
     def describe_job_vars(job_vars: Mapping[str, str]) -> str:
         return " ".join(f"{name}={shlex.quote(value) if value else ''}" for name, value in job_vars.items())
 
     def global_lines(self) -> List[str]:
+        if self.vanilla:
+            return ["GLOBAL ENV: not propagated to the jobs (--vanilla); they get only the listed variables"]
         return ["GLOBAL ENV (inherited by every job via --export=ALL):"] + environment_lines(self.global_env)
+
+
+VANILLA_SYSTEM_PATH = ["/usr/local/bin", "/usr/bin", "/bin"]
+
+
+def vanilla_base_variables(root, sbatch_dir, global_env: Mapping[str, str] = None) -> Dict[str, str]:
+    """Variables a --vanilla job gets besides the per-job ones.
+
+    PATH: root/bin, the SLURM script directory, the directory of initGanrec (looked up on
+    the PATH of global_env, so the recipes can `source initGanrec`) and the system directories.
+    HOME, USER, LOGNAME: from the password database of the submitting user (if the UID has no
+    entry, from Path.home() and getpass.getuser()).
+    Raises ValueError if a value contains a comma (the --export separator).
+    """
+    import pwd
+    import shutil
+    path = [str(Path(root) / "bin"), str(sbatch_dir)]
+    init_ganrec = shutil.which("initGanrec", path=(global_env if global_env is not None else os.environ).get("PATH", ""))
+    if init_ganrec:
+        path.append(os.path.dirname(os.path.abspath(init_ganrec)))
+    path += VANILLA_SYSTEM_PATH
+    try:
+        account = pwd.getpwuid(os.getuid())
+        home, user = account.pw_dir, account.pw_name
+    except KeyError:
+        # UID without a password database entry (e.g. a container)
+        import getpass
+        home, user = str(Path.home()), getpass.getuser()
+    variables = {"PATH": os.pathsep.join(dict.fromkeys(path)), "HOME": home, "USER": user, "LOGNAME": user}
+    for name, value in variables.items():
+        if "," in value:
+            raise ValueError(f"{name} must not contain a comma (sbatch --export uses commas as separator): {value}")
+    return variables
 
 
 def print_arguments(ARG):
