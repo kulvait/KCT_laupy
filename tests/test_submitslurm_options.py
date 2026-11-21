@@ -1,4 +1,4 @@
-"""laupy.submitslurm_options: same parser as submitslurm, splitting and merging calls.
+"""laupy.submitslurm_options: the submitslurm parser, splitting and merging calls.
 
 Run with: python -m pytest tests/test_submitslurm_options.py  (or python tests/test_submitslurm_options.py)
 """
@@ -34,7 +34,8 @@ def describe(parser):
             for a in parser._actions]
 
 
-def test_same_parser_as_submitslurm():
+def test_submitslurm_uses_build_parser():
+    # submitslurm must not add options of its own outside build_parser()
     assert describe(so.build_parser()) == describe(submitslurm_parser())
 
 
@@ -87,7 +88,7 @@ def test_preview_vanilla(tmp_path):
     args = so.parse_merged(["--vanilla", "--job-path", "/opt/tools", "--env", "OMP_NUM_THREADS=8", "s.sbatch"])
     preview = so.preview_environment(args, tmp_path, global_env={"PATH": "/usr/bin", "LAUPY_PYTHON": "/x"})
     assert not preview.inherits
-    assert [d for d, _ in preview.path][:3] == [str(tmp_path / "bin"), str(tmp_path / "sbatch"), "/opt/tools"]
+    assert [d for d, _ in preview.path][:4] == [str(tmp_path / "bin"), str(tmp_path / "script"), str(tmp_path / "sbatch"), "/opt/tools"]
     assert "LAUPY_PYTHON" not in preview.variables          # the shell's value is not used with --vanilla
     assert preview.variables["OMP_NUM_THREADS"] == ("8", "--env OMP_NUM_THREADS")
     assert preview.export.startswith("--export=PATH=")
@@ -97,8 +98,22 @@ def test_preview_inherited(tmp_path):
     args = so.parse_merged(["--job-path", "/opt/tools", "s.sbatch"])
     preview = so.preview_environment(args, tmp_path, global_env={"PATH": "/usr/bin:/bin"})
     assert preview.inherits
-    assert preview.path == [("/opt/tools", "--job-path"), ("/usr/bin", "inherited"), ("/bin", "inherited")]
+    assert preview.path == [(str(tmp_path / "bin"), "ROOT/bin"), (str(tmp_path / "script"), "ROOT/script"),
+                            (str(tmp_path / "sbatch"), "SLURM script directory"),
+                            ("/opt/tools", "--job-path"), ("/usr/bin", "inherited"), ("/bin", "inherited")]
     assert preview.export.startswith("--export=ALL,")
+
+
+def test_preview_root_bin_always_first(tmp_path):
+    # without --job-path, and with an explicit --env PATH (also with --vanilla)
+    root_bin, script, sbatch = str(tmp_path / "bin"), str(tmp_path / "script"), str(tmp_path / "sbatch")
+    preview = so.preview_environment(so.parse_merged(["s.sbatch"]), tmp_path, global_env={"PATH": "/usr/bin"})
+    assert preview.variables["PATH"][0] == f"{root_bin}:{script}:{sbatch}:/usr/bin"
+    for vanilla in ([], ["--vanilla"]):
+        args = so.parse_merged(vanilla + ["--env", f"PATH=/a:{root_bin}", "s.sbatch"])
+        preview = so.preview_environment(args, tmp_path, global_env={"PATH": "/usr/bin"})
+        assert preview.variables["PATH"][0] == f"{root_bin}:{script}:{sbatch}:/a"
+        assert [s for _, s in preview.path] == ["ROOT/bin", "ROOT/script", "SLURM script directory", "--env PATH"]
 
 
 if __name__ == "__main__":

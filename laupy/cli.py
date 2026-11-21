@@ -251,21 +251,44 @@ def parse_job_path(value: str) -> List[str]:
     return directories
 
 
-def job_path_variable(job_path: List[str], global_env: Mapping[str, str] = None) -> str:
-    """PATH of a non-vanilla job with --job-path: the job path directories before the inherited PATH.
+# Labels of workspace_path_directories(), in the same order
+WORKSPACE_PATH_LABELS = ("ROOT/bin", "ROOT/script", "SLURM script directory")
 
-    Raises ValueError if the inherited PATH contains a comma (the --export separator).
+
+def workspace_path_directories(root, sbatch_dir) -> List[str]:
+    """Directories every job has first on its PATH: ROOT/bin (initPython, reconstructSlice2D, ...),
+    ROOT/script (the recipe scripts, e.g. 02destar) and the SLURM script directory."""
+    return [str(Path(root) / "bin"), str(Path(root) / "script"), str(sbatch_dir)]
+
+
+def prepend_path_directories(leading: List[str], path_value: str) -> str:
+    """path_value with the `leading` directories first (each directory once)."""
+    return os.pathsep.join(dict.fromkeys(list(leading) + [d for d in path_value.split(os.pathsep) if d]))
+
+
+def job_path_variable(job_path: List[str], global_env: Mapping[str, str] = None, leading: List[str] = ()) -> str:
+    """PATH of a non-vanilla job: the `leading` directories (workspace_path_directories), the job
+    path directories (--job-path), then the inherited PATH; each directory once.
+
+    Inherited directories containing a comma (the sbatch --export separator) are left out with a
+    warning. Raises ValueError if a leading or job path directory contains a comma.
     """
-    inherited = (global_env if global_env is not None else os.environ).get("PATH", "")
-    if "," in inherited:
-        raise ValueError("the inherited PATH contains a comma (sbatch --export uses commas as separator)")
-    return os.pathsep.join(dict.fromkeys(job_path + [d for d in inherited.split(os.pathsep) if d]))
+    for directory in list(leading) + list(job_path):
+        if "," in directory:
+            raise ValueError(f"directory must not contain a comma (sbatch --export uses commas as separator): {directory}")
+    inherited = []
+    for directory in (global_env if global_env is not None else os.environ).get("PATH", "").split(os.pathsep):
+        if "," in directory:
+            print(f"WARNING: inherited PATH directory left out of the job PATH (contains a comma, the sbatch --export separator): {directory}", file=sys.stderr)
+        elif directory:
+            inherited.append(directory)
+    return os.pathsep.join(dict.fromkeys(list(leading) + list(job_path) + inherited))
 
 
 def vanilla_base_variables(root, sbatch_dir, global_env: Mapping[str, str] = None, job_path: List[str] = None) -> Dict[str, str]:
     """Variables a --vanilla job gets besides the per-job ones.
 
-    PATH: root/bin, the SLURM script directory, the job_path directories (--job-path), the
+    PATH: root/bin, root/script, the SLURM script directory, the job_path directories (--job-path), the
     directory of initGanrec (looked up on the PATH of global_env, so the recipes can
     `source initGanrec`) and the system directories.
     HOME, USER, LOGNAME: from the password database of the submitting user (if the UID has no
@@ -274,7 +297,7 @@ def vanilla_base_variables(root, sbatch_dir, global_env: Mapping[str, str] = Non
     """
     import pwd
     import shutil
-    path = [str(Path(root) / "bin"), str(sbatch_dir)] + list(job_path or [])
+    path = workspace_path_directories(root, sbatch_dir) + list(job_path or [])
     init_ganrec = shutil.which("initGanrec", path=(global_env if global_env is not None else os.environ).get("PATH", ""))
     if init_ganrec:
         path.append(os.path.dirname(os.path.abspath(init_ganrec)))

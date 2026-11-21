@@ -4,8 +4,8 @@ A helper for programs that compose submitslurm calls (the lautools submission co
 editor): the parser, a description of every option, splitting a call into options,
 merging a call with context options, and a preview of the job environment.
 
-submitslurm itself does not use this module yet; build_parser() must stay identical to
-the parser in laupy/scripts/submitslurm.py (tests/test_submitslurm_options.py checks it).
+submitslurm (laupy/scripts/submitslurm.py) parses its command line with build_parser(), so
+options are added here and every consumer sees the same option set.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from laupy.cli import (
     LAUPY_PYTHON,
     SubmissionEnvironment,
     VANILLA_SYSTEM_PATH,
+    WORKSPACE_PATH_LABELS,
     add_common_arguments,
     add_node_source_arguments,
     check_python_environment,
@@ -31,7 +32,9 @@ from laupy.cli import (
     parse_env_assignment,
     parse_job_path,
     parse_python_environment,
+    prepend_path_directories,
     vanilla_base_variables,
+    workspace_path_directories,
 )
 
 STATE_CHOICES = ["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"]
@@ -46,7 +49,7 @@ MERGED_DESTS = {"env"}
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """The submitslurm parser (keep identical to laupy/scripts/submitslurm.py)."""
+    """The submitslurm parser, used by submitslurm itself."""
     parser = argparse.ArgumentParser(prog="submitslurm", description="Submit jobs to SLURM using laupy")
     add_common_arguments(parser, dry_run_help="Simulate the submission without actually submitting jobs or creating files")
     parser.add_argument("-a", "--slurmargs", type=str, help="Additional SLURM arguments")
@@ -59,10 +62,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-s", "--strong-nodes", action="store_true", help="Use strong nodes only")
     parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
     add_node_source_arguments(parser)
-    parser.add_argument("--vanilla", action="store_true", help=f"Do not propagate the submitting environment to the jobs (--export without ALL). A job gets only SLURM_* and explicit variables: PATH (ROOT/bin, the SLURM script directory, the directory of initGanrec, /usr/local/bin:/usr/bin:/bin), HOME, USER, LOGNAME, PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME, LD_PRELOAD=, --env and --python ({LAUPY_PYTHON} of the submitting shell is not used). To test submissions independently of the user environment.")
-    parser.add_argument("--job-path", type=parse_job_path, metavar="DIR[:DIR...]", help="Directories for the PATH of the jobs, exported explicitly: with --vanilla after ROOT/bin and the SLURM script directory, otherwise before the inherited PATH. Shown with --verbose.")
+    parser.add_argument("--vanilla", action="store_true", help=f"Do not propagate the submitting environment to the jobs (--export without ALL). A job gets only SLURM_* and explicit variables: PATH (ROOT/bin, ROOT/script, the SLURM script directory, the directory of initGanrec, /usr/local/bin:/usr/bin:/bin), HOME, USER, LOGNAME, PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME, LD_PRELOAD=, --env and --python ({LAUPY_PYTHON} of the submitting shell is not used). To test submissions independently of the user environment.")
+    parser.add_argument("--job-path", type=parse_job_path, metavar="DIR[:DIR...]", help="Directories for the PATH of the jobs, after ROOT/bin, ROOT/script and the SLURM script directory (which always lead the job PATH) and, without --vanilla, before the inherited PATH.")
     parser.add_argument("--python", type=parse_python_environment, metavar="PATH", help=f"Python (Conda/Mamba) environment of the jobs: exported as {LAUPY_PYTHON}=PATH, which initGanrec activates instead of its default, and recorded in the pipeline entry so resubmissions use it too. Without --python, {LAUPY_PYTHON} of the submitting shell is used if set.")
-    parser.add_argument("--env", type=parse_env_assignment, action="append", default=[], metavar="NAME=VALUE", help="Set an environment variable for every submitted job (repeatable); overrides the defaults PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME and LD_PRELOAD=. Shown with --verbose.")
+    parser.add_argument("--env", type=parse_env_assignment, action="append", default=[], metavar="NAME=VALUE", help="Set an environment variable for every submitted job (repeatable); overrides the defaults PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME and LD_PRELOAD=. PATH=... replaces the computed job PATH, ROOT/bin, ROOT/script and the SLURM script directory are still put first. Shown with --verbose.")
     scheduling_group = parser.add_mutually_exclusive_group()
     scheduling_group.add_argument("--pipeline-step", type=str, default="-1", help="Pipeline step number or DAG node name. Uses only explicit DAG dependencies. Default is -1, which are not put or evaluated against DAG.")
     parser.add_argument("--dependencies", type=parse_comma_separated, action="append", default=None, metavar="NODE[,NODE...]", help="Dependencies for non numeric --pipeline-step/DAG node, comma-separated or repeated. Can also be numeric pipeline steps (e.g., 0,1,2), numeric pipeline steps can not have explicit --dependencies. Default is None.")
@@ -287,7 +290,7 @@ def preview_environment(args: argparse.Namespace, root, global_env: Mapping[str,
         sources.update({name: "vanilla default" for name in environment.base})
         init_dir = shutil.which("initGanrec", path=global_env.get("PATH", ""))
         init_dir = os.path.dirname(os.path.abspath(init_dir)) if init_dir else None
-        labels = {str(root / "bin"): "ROOT/bin", str(sbatch_abs): "SLURM script directory"}
+        labels = dict(zip(workspace_path_directories(root, sbatch_abs), WORKSPACE_PATH_LABELS))
         labels.update({d: "--job-path" for d in args.job_path or []})
         if init_dir:
             labels.setdefault(init_dir, "initGanrec")
@@ -295,29 +298,34 @@ def preview_environment(args: argparse.Namespace, root, global_env: Mapping[str,
         path_sources = [(d, labels.get(d, "")) for d in environment.base["PATH"].split(os.pathsep)]
         if not init_dir:
             preview.warnings.append("initGanrec is not on the submitting PATH; recipes that source it will fail")
-    else:
-        inherited = [d for d in global_env.get("PATH", "").split(os.pathsep) if d]
-        if args.job_path:
-            environment.extra["PATH"] = job_path_variable(args.job_path, global_env)
-            path_sources = [(d, "--job-path") for d in args.job_path] + [(d, "inherited") for d in inherited if d not in args.job_path]
-        else:
-            path_sources = [(d, "inherited") for d in inherited]
+    leading = workspace_path_directories(root, sbatch_abs)
+    leading_labels = list(zip(leading, WORKSPACE_PATH_LABELS))
     if "PATH" in extra:
-        path_sources = [(d, "--env PATH") for d in extra["PATH"].split(os.pathsep) if d]
+        environment.extra["PATH"] = prepend_path_directories(leading, extra["PATH"])
+        path_sources = leading_labels + [(d, "--env PATH") for d in extra["PATH"].split(os.pathsep) if d and d not in leading]
+    elif not args.vanilla:
+        job_path = args.job_path or []
+        environment.extra["PATH"] = job_path_variable(job_path, global_env, leading)
+        labels = dict(leading_labels)
+        for d in job_path:
+            labels.setdefault(d, "--job-path")
+        path_sources = [(d, labels.get(d, "inherited")) for d in environment.extra["PATH"].split(os.pathsep)]
     for directory in args.job_path or []:
         if not os.path.isdir(directory):
             preview.warnings.append(f"--job-path directory does not exist: {directory}")
 
     job_vars = environment.job_vars(script_name, job_name)
     for name, value in job_vars.items():
-        if name in extra:
+        if name in extra and name != "PATH":
             source = f"--env {name}"
         elif name == LAUPY_PYTHON:
             source = python_source or ""
         elif name in ("PIPELINE_SCRIPTNAME", "PIPELINE_JOBNAME", "LD_PRELOAD"):
             source = "per job"
-        elif name == "PATH" and args.job_path and not args.vanilla:
-            source = "--job-path + inherited"
+        elif name == "PATH" and "PATH" in extra:
+            source = "ROOT/bin, ROOT/script, SLURM script directory + --env PATH"
+        elif name == "PATH" and not args.vanilla:
+            source = "ROOT/bin, ROOT/script, SLURM script directory" + (", --job-path" if args.job_path else "") + " + inherited"
         else:
             source = sources.get(name, "")
         preview.variables[name] = (value, source)

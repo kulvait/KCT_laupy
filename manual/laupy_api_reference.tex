@@ -61,10 +61,11 @@
   left=4pt, right=4pt, top=2pt, bottom=2pt, breakable,
   listing options={style=py}, #1
 }
-\newtcblisting{terminal}[1][]{
+% no optional argument: looking for one would read a first line starting with # as TeX
+\newtcblisting{terminal}{
   listing only, colback=termbg, colframe=termframe, boxrule=0.4pt, arc=2pt,
   left=4pt, right=4pt, top=2pt, bottom=2pt, breakable,
-  listing options={language={},basicstyle=\ttfamily\small,commentstyle={},stringstyle={},keywordstyle={}}, #1
+  listing options={language={},basicstyle=\ttfamily\small,commentstyle={},stringstyle={},keywordstyle={}}
 }
 \newtcolorbox{note}[1][Note]{
   colback=notebg, colframe=accent, boxrule=0.4pt, arc=2pt, breakable,
@@ -696,15 +697,22 @@ With \cmd{vanilla=True} (\cmd{submitslurm -{}-vanilla}), \cmd{global\_env} is no
 the usual ones. \cmd{export\_option()} is an instance method.
 
 \api{vanilla\_base\_variables(root, sbatch\_dir, global\_env=None, job\_path=None) -> dict}
-\cmd{PATH} (\cmd{root/bin}, \cmd{sbatch\_dir}, the \cmd{job\_path} directories, the directory of \cmd{initGanrec} found on the \cmd{PATH}
+\cmd{PATH} (\cmd{root/bin}, \cmd{root/script}, \cmd{sbatch\_dir}, the \cmd{job\_path} directories, the directory of \cmd{initGanrec} found on the \cmd{PATH}
 of \cmd{global\_env} or \cmd{os.environ}, \cmd{VANILLA\_SYSTEM\_PATH}), \cmd{HOME}, \cmd{USER},
 \cmd{LOGNAME} (password database; \cmd{Path.home()}/\cmd{getpass.getuser()} if the UID has no entry).
 \raises \cmd{ValueError} if a value contains a comma.
 
-\api{parse\_job\_path(value) -> list[str]\quad job\_path\_variable(job\_path, global\_env=None) -> str}
+\api{parse\_job\_path(value) -> list[str]\quad job\_path\_variable(job\_path, global\_env=None, leading=()) -> str}
 \cmd{argparse} type of \cmd{submitslurm -{}-job-path}: the colon-separated directories made absolute
-(no comma). \cmd{job\_path\_variable()} gives the \cmd{PATH} of a non-vanilla job: \cmd{job\_path}
-before the inherited \cmd{PATH}, without duplicates (\cmd{ValueError} if that contains a comma).
+(no comma). \cmd{job\_path\_variable()} gives the \cmd{PATH} of a non-vanilla job: \cmd{leading},
+\cmd{job\_path}, then the inherited \cmd{PATH}, without duplicates; inherited directories with a comma
+are left out with a warning (\cmd{ValueError} for a comma in \cmd{leading} or \cmd{job\_path}).
+
+\api{workspace\_path\_directories(root, sbatch\_dir) -> list[str]\quad prepend\_path\_directories(leading, path\_value) -> str}
+The directories \cmd{submitslurm} puts first on the \cmd{PATH} of every job:
+\cmd{[root/bin, root/script, sbatch\_dir]}, labelled by \cmd{WORKSPACE\_PATH\_LABELS}.
+\cmd{prepend\_path\_directories()} gives \cmd{path\_value} with \cmd{leading} first, each directory
+once (used for \cmd{-{}-env PATH=}).
 
 \api{environment\_lines(env, indent="    ") -> list[str]}
 \cmd{CONDA\_PREFIX} and the \cmd{PATH} components, one per line; components below
@@ -731,12 +739,12 @@ Print the parsed arguments (\cmd{-{}-verbose}).
 \section{\texorpdfstring{\cmd{laupy.submitslurm\_options}}{laupy.submitslurm\_options}}
 
 The \cmd{submitslurm} option set as a component for programs that compose \cmd{submitslurm} calls
-(the lautools submission context editor). \cmd{submitslurm} does not use it yet;
-\cmd{build\_parser()} is kept identical to its parser, which \cmd{tests/test\_submitslurm\_options.py}
-checks.
+(the lautools submission context editor). \cmd{submitslurm} parses its own command line with
+\cmd{build\_parser()}, so a new option is added there and every consumer sees it;
+\cmd{tests/test\_submitslurm\_options.py} checks that \cmd{submitslurm} uses this parser.
 
 \api{build\_parser() -> argparse.ArgumentParser}
-The \cmd{submitslurm} parser.
+The \cmd{submitslurm} parser, used by \cmd{submitslurm} itself.
 
 \api{option\_specs(parser=None) -> list[OptionSpec]\quad context\_option\_specs(parser=None) -> list[OptionSpec]}
 Every option (without help and positional), or only those of category \cmd{"context"}.

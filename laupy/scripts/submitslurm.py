@@ -3,12 +3,12 @@
 import os
 import sys
 import time
-import argparse
 from laupy import maxwell
 import shlex
 import shutil
 import logging
-from laupy.cli import LAUPY_PYTHON, join_dash_values, SubmissionEnvironment, job_path_variable, parse_job_path, vanilla_base_variables, check_python_environment, parse_python_environment, add_common_arguments, add_node_source_arguments, apply_node_source_arguments, print_node_notes, parse_comma_separated, parse_env_assignment, print_arguments, resolve_directory_tree
+from laupy.cli import LAUPY_PYTHON, join_dash_values, SubmissionEnvironment, job_path_variable, prepend_path_directories, workspace_path_directories, vanilla_base_variables, check_python_environment, apply_node_source_arguments, print_node_notes, print_arguments, resolve_directory_tree
+from laupy.submitslurm_options import build_parser
 from laupy.pipeline_entries import PipelineEntriesStore, select_pipeline_entries, retire_pipeline_entries, cancel_pipeline_entries
 from laupy.flow import SchedulingError, clean_pipeline_entries, remove_pipeline_dir, schedule_slurm_job
 from laupy.slurm import run_slurm_command
@@ -27,7 +27,6 @@ ch.setFormatter(formatter)
 log.addHandler(ch)
 log.propagate = False  # Prevent log messages from being propagated to the root logger
 
-STATE_CHOICES = ["NONE", "PENDING", "RUNNING", "REQUEUED", "COMPLETING", "FAILED", "CANCELLED", "TIMEOUT", "COMPLETED"]
 
 
 def appendCommand(cmd_list, pipeline_file):
@@ -76,39 +75,8 @@ def range_entries(range_name, node_entries, cmd_entries, jobname_entries):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Submit jobs to SLURM using laupy")
-
-    # Define command-line arguments
-    add_common_arguments(parser, dry_run_help="Simulate the submission without actually submitting jobs or creating files")
-    parser.add_argument("-a", "--slurmargs", type=str, help="Additional SLURM arguments")
-    parser.add_argument("-f", "--partition", type=str, help="Partition to use (defaults to 'allcpu,allgpu')", default="allcpu,allgpu")
-    parser.add_argument("-n", "--nodelist", type=str, help="Specify node list")
-    parser.add_argument("-o", "--oversubscribe", action="store_true", help="Allow oversubscription")
-    parser.add_argument("-t", "--delaytime", type=int, help="Delay time in seconds before the next submit", default=0)
-    parser.add_argument('-g', '--gpu-nodes', action='store_true', help="Select only nodes with GPUs")
-    parser.add_argument("-e", "--excellent-nodes", action="store_true", help="Use excellent nodes only")
-    parser.add_argument("-s", "--strong-nodes", action="store_true", help="Use strong nodes only")
-    parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
-    add_node_source_arguments(parser)
-    parser.add_argument("--vanilla", action="store_true", help=f"Do not propagate the submitting environment to the jobs (--export without ALL). A job gets only SLURM_* and explicit variables: PATH (ROOT/bin, the SLURM script directory, the directory of initGanrec, /usr/local/bin:/usr/bin:/bin), HOME, USER, LOGNAME, PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME, LD_PRELOAD=, --env and --python ({LAUPY_PYTHON} of the submitting shell is not used). To test submissions independently of the user environment.")
-    parser.add_argument("--job-path", type=parse_job_path, metavar="DIR[:DIR...]", help="Directories for the PATH of the jobs, exported explicitly: with --vanilla after ROOT/bin and the SLURM script directory, otherwise before the inherited PATH. Shown with --verbose.")
-    parser.add_argument("--python", type=parse_python_environment, metavar="PATH", help=f"Python (Conda/Mamba) environment of the jobs: exported as {LAUPY_PYTHON}=PATH, which initGanrec activates instead of its default, and recorded in the pipeline entry so resubmissions use it too. Without --python, {LAUPY_PYTHON} of the submitting shell is used if set.")
-    parser.add_argument("--env", type=parse_env_assignment, action="append", default=[], metavar="NAME=VALUE", help="Set an environment variable for every submitted job (repeatable); overrides the defaults PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME and LD_PRELOAD=. Shown with --verbose.")
-    scheduling_group = parser.add_mutually_exclusive_group()
-    scheduling_group.add_argument("--pipeline-step", type=str, default="-1", help="Pipeline step number or DAG node name. Uses only explicit DAG dependencies. Default is -1, which are not put or evaluated against DAG.")
-    parser.add_argument("--dependencies", type=parse_comma_separated, action="append", default=None, metavar="NODE[,NODE...]", help="Dependencies for non numeric --pipeline-step/DAG node, comma-separated or repeated. Can also be numeric pipeline steps (e.g., 0,1,2), numeric pipeline steps can not have explicit --dependencies. Default is None.")
-    parser.add_argument("--skip-range", type=str, choices=["none", "cmd", "jobname", "step"], default="cmd", help="Scope of entries of the same node that make the new submission be skipped: 'none' (never skip), 'cmd' (same command), 'jobname' (same SLURM job name), 'step' (any entry of the node). Default is 'cmd'.")
-    parser.add_argument("--skip-state", nargs="+", choices=STATE_CHOICES, default=["PENDING", "RUNNING", "REQUEUED"], help="SLURM job states to yield to command submitted in the same step with coresponging state. Default is PENDING, RUNNING, REQUEUED.")
-    parser.add_argument("--retire-range", type=str, choices=["none", "cmd", "step"], default="cmd", help="Scope of retiring entries on new submission: 'none' (retire nothing), 'cmd' (retire only entries with the same command and step), 'step' (retire all entries with the same step regardless of command). Default is 'cmd'.")
-    parser.add_argument("--retire-state", nargs="+", choices=STATE_CHOICES, default=["FAILED", "CANCELLED", "TIMEOUT"], help="SLURM job states that trigger retiring of entries in the same step on new submission with --retire-range set to 'cmd' or 'step'. Default is FAILED, CANCELLED, TIMEOUT.")
-    parser.add_argument("--cancel-range", type=str, choices=["none", "cmd", "step"], default="none", help="Scope of cancelling active jobs on new submission: 'none' (cancel nothing), 'cmd' (cancel only jobs with the same command and step), 'step' (cancel all jobs with the same step regardless of command). Default is 'none'.")
-    parser.add_argument("--cancel-state", nargs="+", choices=STATE_CHOICES, default=["NONE"], help="SLURM job states that trigger cancellation of active jobs in the same step on new submission with --cancel-range set to 'cmd' or 'step'. Default is NONE (no cancellations).")
-    # ---- Pipeline directory management (same as `pipeline create|clean|delete`) ----
-    pipeline_group = parser.add_mutually_exclusive_group()
-    pipeline_group.add_argument("--create-pipeline-only", action="store_true", help="Create only the pipeline directory and exit (scriptName not required); same as `pipeline create`.")
-    pipeline_group.add_argument("--clean-dag", action="store_true", help="Forget the pipeline entries and exit (scriptName not required); same as `pipeline clean`.")
-    pipeline_group.add_argument("--delete-pipeline-only", action="store_true", help="Delete the pipeline directory and exit (scriptName not required); same as `pipeline delete`.")
-    parser.add_argument("scriptName", type=str, nargs="?", help="Script to execute in each working directory")
+    # The option set is laupy.submitslurm_options.build_parser(), shared with programs composing calls
+    parser = build_parser()
 
     # Parse the arguments
     # -a "--bin 2 ..." / --env A=-x: values starting with "-" are joined to their option first
@@ -158,12 +126,17 @@ def main():
         print("    plus PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME, LD_PRELOAD=" + (", " + ", ".join(ENVIRONMENT.extra) if ENVIRONMENT.extra else ""))
         if not shutil.which("initGanrec", path=ENVIRONMENT.base["PATH"]):
             print("    WARNING: initGanrec is not on this PATH; recipes that source it will fail", file=sys.stderr)
-    elif ARG.job_path:
-        try:
-            ENVIRONMENT.extra["PATH"] = job_path_variable(ARG.job_path, ENVIRONMENT.global_env)
-        except ValueError as e:
-            parser.error(f"--job-path: {e}")
-        print(f"Job PATH: {os.pathsep.join(ARG.job_path)} before the inherited PATH (exported explicitly)")
+    # ROOT/bin (initPython, reconstructSlice2D, ...), ROOT/script and the SLURM script directory always lead the job PATH
+    leading = workspace_path_directories(directory_tree.root, directory_tree.sbatch_abs)
+    try:
+        if "PATH" in ENVIRONMENT.extra:
+            ENVIRONMENT.extra["PATH"] = prepend_path_directories(leading, ENVIRONMENT.extra["PATH"])
+            print(f"Job PATH: {os.pathsep.join(leading)}, then --env PATH")
+        elif not ARG.vanilla:
+            ENVIRONMENT.extra["PATH"] = job_path_variable(ARG.job_path or [], ENVIRONMENT.global_env, leading)
+            print(f"Job PATH: {os.pathsep.join(leading + (ARG.job_path or []))}, then the inherited PATH (exported explicitly)")
+    except ValueError as e:
+        parser.error(f"job PATH: {e}")
     for directory in ARG.job_path or []:
         if not os.path.isdir(directory):
             print(f"WARNING: --job-path directory does not exist: {directory}", file=sys.stderr)
