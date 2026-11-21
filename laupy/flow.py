@@ -377,6 +377,11 @@ def resubmit_slurm_job(PIPELINE_ENTRIES: list, entry_id: Union[str, int, Dict], 
 				slurm.scancel(ENTRY["slurm_id"])
 				log.info(f"Cancelled SLURM job with ID {ENTRY['slurm_id']} for node '{ENTRY['dag_node_name']}'")
 		SLURM_CMD = ENTRY["slurm_command"].copy()  # Create a copy of the SLURM command to avoid modifying the original
+		# The Python environment is the one of the entry: its --export carries LAUPY_PYTHON, and an
+		# entry without it must not pick up LAUPY_PYTHON from the resubmitting process (--export=ALL)
+		laupy_python = ENTRY.get("laupy_python")
+		if laupy_python is None:
+			env = {name: value for name, value in (os.environ if env is None else env).items() if name != "LAUPY_PYTHON"}
 		NEW_ENTRY = schedule_slurm_job(
 			PIPELINE_ENTRIES=PIPELINE_ENTRIES,
 			dag_node_or_step_name=ENTRY["dag_node_name"],
@@ -387,6 +392,7 @@ def resubmit_slurm_job(PIPELINE_ENTRIES: list, entry_id: Union[str, int, Dict], 
 			cmd=[ENTRY["command"]],
 			node_dependencies=ENTRY.get("dag_node_deps", []),
 			env=env,
+			laupy_python=laupy_python,
 		)
 		if NEW_ENTRY is not None:
 			# The old entry is retired only once its replacement is submitted
@@ -403,11 +409,13 @@ class SchedulingError(RuntimeError):
 	"""A job could not be scheduled (failed dependency, sbatch failure, invalid DAG)."""
 
 
-def schedule_slurm_job(PIPELINE_ENTRIES: list, dag_node_or_step_name: str, script_name: str, job_name: str, processing_unit_subdir: str, slurm_cmd: list, cmd: list, node_dependencies: list = None, env=None, raise_errors: bool = False) -> dict:
+def schedule_slurm_job(PIPELINE_ENTRIES: list, dag_node_or_step_name: str, script_name: str, job_name: str, processing_unit_subdir: str, slurm_cmd: list, cmd: list, node_dependencies: list = None, env=None, raise_errors: bool = False, laupy_python: str = None) -> dict:
 	"""Submit a SLURM job for a DAG node, depending on the active jobs of its ancestor nodes.
 
 	Returns the new entry; the caller appends it to PIPELINE_ENTRIES and saves them.
 	The new entry records the SLURM IDs it depends on in dependency_slurm_ids.
+	laupy_python: Python environment of the job (LAUPY_PYTHON, already in the --export of slurm_cmd),
+	recorded in the entry field laupy_python; None records nothing (the default environment).
 	On failure returns None after logging the error, or with raise_errors=True
 	raises SchedulingError with a one-line reason instead.
 	"""
@@ -425,6 +433,8 @@ def schedule_slurm_job(PIPELINE_ENTRIES: list, dag_node_or_step_name: str, scrip
 		NEW_ENTRY["slurm_command"] = slurm_cmd
 		NEW_ENTRY["processing_unit_name"] = os.path.basename(processing_unit_subdir)
 		NEW_ENTRY["processing_unit_subdir"] = processing_unit_subdir
+		if laupy_python is not None:
+			NEW_ENTRY["laupy_python"] = laupy_python
 		if string_is_integer(dag_node_or_step_name):
 			step = int(dag_node_or_step_name)
 			NEW_ENTRY["step"] = step

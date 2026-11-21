@@ -53,7 +53,7 @@ def buildParser():
 	parser.add_argument("--redis-port", type=int, default=6379, help="Redis server port")
 	parser.add_argument("--redis-db", type=int, default=0, help="Redis server db")
 	parser.add_argument("--redis-prefix", type=str, default="GPU", help="Prefix of Redis objects to be used for GPU management")
-	parser.add_argument("--pid", type=int, default=None, help="Process that holds the GPU for --get and --release, instead of the parent process. Pass the long-running process that uses the GPU: when it ends, its GPU is returned to the pool.")
+	parser.add_argument("--pid", type=int, default=None, help="Process that holds the GPU for --get, --get-with-platform and --release, and the subscriber for --subscribe and --unsubscribe, instead of the parent process. Pass the long-running process that uses the GPU: when it ends, its GPU is returned to the pool.")
 	parser.add_argument("--force", action="store_true", help="With --redis-manage*: replace an existing pool. With --redis-delete: delete even while GPUs are in use. Replacing is refused while running processes hold GPUs.")
 	parser.add_argument("--try-start-server", action="store_true", help="Ensure local Redis exists, then initialize or reuse a matching GPU pool",)
 	parser.add_argument("--subscribe", action="store_true", help="With --redis-manage*: after creating or joining the pool, subscribe the process given by --pid (default: the calling process) as a user of the pool. Use GPU --unsubscribe --try-stop-server at the end; the last subscriber alive stops the server.")
@@ -74,7 +74,8 @@ def buildParser():
 	action.add_argument("--redis-managed-insert", default=None, type=int, help="Insert GPU ID to managed IDs.")
 	action.add_argument("--redis-managed-delete", default=None, type=int, help="Remove GPU ID from managed IDs.")
 	#GPU management and database information
-	action.add_argument("--get", action="store_true", help="Get GPU ID that is not in use.")
+	action.add_argument("--get", action="store_true", help="Wait for an idle GPU of the pool, take it for --pid and print its device ID.")
+	action.add_argument("--get-with-platform", action="store_true", help="Like --get, but print PLATFORM:DEVICE (the OpenCL platform of the pool and the device ID), the form the kct programs take with -p. Release it with --release DEVICE.")
 	action.add_argument("--release", default=None, type=int, help="Release GPU ID after it is no longer in use")
 	action.add_argument("--managed-gpu-count", action="store_true", help="Get number of GPUs managed by the Redis server")
 	action.add_argument("--managed", action="store_true", help="Print managed GPUs.")
@@ -712,7 +713,9 @@ def main_with_discovery(argv=None):
 		print(devCount)
 		return 0
 
-	if ARG.get:
+	if ARG.get or ARG.get_with_platform:
+		# The platform comes from the pool, so it always matches the device (raises DiscoveryError without one)
+		platform_id = getManagedPlatformID(rs, ARG.redis_prefix) if ARG.get_with_platform else None
 		if ARG.pid is not None:
 			PID = ARG.pid
 		else:
@@ -749,7 +752,7 @@ def main_with_discovery(argv=None):
 					transaction.delete("%s_GPU%d"%(ARG.redis_prefix, int(ID)))
 					transaction.hset("%s_GPU%d"%(ARG.redis_prefix, int(ID)), mapping=record)
 					transaction.execute()
-					print(ID)
+					print("%d:%d"%(platform_id, ID) if ARG.get_with_platform else ID)
 					break
 		finally:
 			stop_watcher.set()

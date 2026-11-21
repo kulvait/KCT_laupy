@@ -7,7 +7,7 @@ import argparse
 from laupy import maxwell
 import shlex
 import logging
-from laupy.cli import SubmissionEnvironment, add_common_arguments, add_node_source_arguments, apply_node_source_arguments, print_node_notes, parse_comma_separated, parse_env_assignment, print_arguments, resolve_directory_tree
+from laupy.cli import LAUPY_PYTHON, SubmissionEnvironment, check_python_environment, parse_python_environment, add_common_arguments, add_node_source_arguments, apply_node_source_arguments, print_node_notes, parse_comma_separated, parse_env_assignment, print_arguments, resolve_directory_tree
 from laupy.pipeline_entries import PipelineEntriesStore, select_pipeline_entries, retire_pipeline_entries, cancel_pipeline_entries
 from laupy.flow import SchedulingError, clean_pipeline_entries, remove_pipeline_dir, schedule_slurm_job
 from laupy.slurm import run_slurm_command
@@ -89,6 +89,7 @@ def main():
     parser.add_argument("-s", "--strong-nodes", action="store_true", help="Use strong nodes only")
     parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
     add_node_source_arguments(parser)
+    parser.add_argument("--python", type=parse_python_environment, metavar="PATH", help=f"Python (Conda/Mamba) environment of the jobs: exported as {LAUPY_PYTHON}=PATH, which initGanrec activates instead of its default, and recorded in the pipeline entry so resubmissions use it too. Without --python, {LAUPY_PYTHON} of the submitting shell is used if set.")
     parser.add_argument("--env", type=parse_env_assignment, action="append", default=[], metavar="NAME=VALUE", help="Set an environment variable for every submitted job (repeatable); overrides the defaults PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME and LD_PRELOAD=. Shown with --verbose.")
     scheduling_group = parser.add_mutually_exclusive_group()
     scheduling_group.add_argument("--pipeline-step", type=str, default="-1", help="Pipeline step number or DAG node name. Uses only explicit DAG dependencies. Default is -1, which are not put or evaluated against DAG.")
@@ -111,6 +112,25 @@ def main():
     print(f"submitslurm with parameters: {quote_command(sys.argv[1:])}")
     # Environment of the jobs: inherited global environment + per-job variables
     ENVIRONMENT = SubmissionEnvironment(extra=dict(ARG.env))
+    # Python environment of the jobs (LAUPY_PYTHON): --python, else --env LAUPY_PYTHON=..., else the submitting shell.
+    # It is always exported explicitly and recorded in the entries, so a resubmission is exact.
+    if ARG.python is not None and ENVIRONMENT.extra.get(LAUPY_PYTHON, ARG.python) != ARG.python:
+        parser.error(f"--python {ARG.python} conflicts with --env {LAUPY_PYTHON}={ENVIRONMENT.extra[LAUPY_PYTHON]}")
+    if ARG.python is not None:
+        LAUPY_PYTHON_VALUE, LAUPY_PYTHON_SOURCE = ARG.python, "--python"
+    elif ENVIRONMENT.extra.get(LAUPY_PYTHON):
+        LAUPY_PYTHON_VALUE, LAUPY_PYTHON_SOURCE = ENVIRONMENT.extra[LAUPY_PYTHON], f"--env {LAUPY_PYTHON}"
+    elif ENVIRONMENT.global_env.get(LAUPY_PYTHON):
+        LAUPY_PYTHON_VALUE, LAUPY_PYTHON_SOURCE = ENVIRONMENT.global_env[LAUPY_PYTHON], "submitting shell"
+    else:
+        LAUPY_PYTHON_VALUE, LAUPY_PYTHON_SOURCE = None, None
+    if LAUPY_PYTHON_VALUE is not None:
+        try:
+            LAUPY_PYTHON_VALUE = check_python_environment(LAUPY_PYTHON_VALUE)
+        except ValueError as e:
+            parser.error(f"{LAUPY_PYTHON} from {LAUPY_PYTHON_SOURCE}: {e}")
+        ENVIRONMENT.extra[LAUPY_PYTHON] = LAUPY_PYTHON_VALUE
+        print(f"Python environment of the jobs ({LAUPY_PYTHON}, from {LAUPY_PYTHON_SOURCE}): {LAUPY_PYTHON_VALUE}")
     if ARG.verbose:
         print_arguments(ARG)
         for line in ENVIRONMENT.global_lines():
@@ -283,7 +303,7 @@ def main():
                 else:
                     print(f"    WARNING: could not cancel {result['slurm_id']}: {result['error']}")
             retire_candidates = select_pipeline_entries(range_entries(ARG.retire_range, node_entries, cmd_entries, jobname_entries), ARG.retire_state)
-            NEW_ENTRY = schedule_slurm_job(PIPELINE_ENTRIES, dag_node_name, SCRIPTNAME, JOBNAME, SUBDIR_ABS, SLURM_CMD_ABS, EXEC_CMD_ABS, node_dependencies=dependencies, env=ENVIRONMENT.global_env, raise_errors=True)
+            NEW_ENTRY = schedule_slurm_job(PIPELINE_ENTRIES, dag_node_name, SCRIPTNAME, JOBNAME, SUBDIR_ABS, SLURM_CMD_ABS, EXEC_CMD_ABS, node_dependencies=dependencies, env=ENVIRONMENT.global_env, raise_errors=True, laupy_python=LAUPY_PYTHON_VALUE)
             PIPELINE_ENTRIES.append(NEW_ENTRY)
             print(f"    INFO: submitted {NEW_ENTRY['slurm_id']}, node {dag_node_name}{dependency_description(PIPELINE_ENTRIES, NEW_ENTRY.get('dependency_slurm_ids'))}")
             # The replaced entries are retired and point to the entry that replaced them

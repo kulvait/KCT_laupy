@@ -1,0 +1,1304 @@
+% User manual for lautools-browser and the laupy command line tools.
+% Compile with:  tectonic laupy_lautools_manual.tex
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{listings}
+\usepackage{booktabs,tabularx,longtable,array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+
+\definecolor{accent}{HTML}{1F5A96}
+\definecolor{termbg}{HTML}{F4F6F8}
+\definecolor{termframe}{HTML}{B8C2CC}
+\definecolor{notebg}{HTML}{EAF2FB}
+\definecolor{warnbg}{HTML}{FDF1E4}
+\definecolor{warnframe}{HTML}{D9822B}
+
+\hypersetup{colorlinks=true,linkcolor=accent,urlcolor=accent}
+\setlist{itemsep=2pt,topsep=4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{3em}
+
+\titleformat{\section}{\Large\bfseries\sffamily\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily}{\thesubsubsection}{0.8em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\sffamily laupy \& lautools-browser --- User Manual}
+\fancyhead[R]{\small\sffamily\nouppercase{\leftmark}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=4,
+  upquote=true,
+  language={},
+  commentstyle={},
+  stringstyle={},
+}
+
+\newtcblisting{terminal}[1][]{
+  listing only, colback=termbg, colframe=termframe, boxrule=0.4pt, arc=2pt,
+  left=4pt, right=4pt, top=2pt, bottom=2pt, breakable, #1
+}
+\newtcolorbox{note}[1][Note]{
+  colback=notebg, colframe=accent, boxrule=0.4pt, arc=2pt, breakable,
+  fonttitle=\bfseries\sffamily\small, title={#1}, left=5pt, right=5pt
+}
+\newtcolorbox{warning}[1][Caution]{
+  colback=warnbg, colframe=warnframe, boxrule=0.4pt, arc=2pt, breakable,
+  fonttitle=\bfseries\sffamily\small, title={#1}, left=5pt, right=5pt
+}
+
+\newcommand{\cmd}[1]{\texttt{#1}}
+\newcommand{\ui}[1]{\textsf{\textbf{#1}}}
+\newcommand{\menu}[1]{\textsf{#1}}
+\newcommand{\key}[1]{\tcbox[on line, boxsep=0pt, left=2pt, right=2pt, top=1pt, bottom=1pt, colback=white, colframe=gray!60, boxrule=0.4pt, arc=1.5pt]{\small\ttfamily #1}}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\sffamily\Huge\bfseries\color{accent} laupy \& lautools-browser\par}
+  \vspace{0.6cm}
+  {\sffamily\LARGE User Manual\par}
+  \vspace{1.2cm}
+  {\large Running tomographic reconstruction pipelines on the DESY Maxwell cluster\par}
+  \vspace{2cm}
+  \begin{tabular}{rl}
+    laupy & version 1.2.5 \\
+    lautools & version 1.2.5 \\
+  \end{tabular}
+  \vfill
+  {\small Licensed under the GNU General Public License v3.0\par}
+  {\small Compiled \today\par}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+% ======================================================================
+\section{Overview}
+% ======================================================================
+
+Three components cooperate to process a PETRA~III tomography beamtime on the Maxwell cluster:
+
+\begin{description}[style=nextline,leftmargin=1.5em]
+  \item[laupy] A Python library and the command line tools \cmd{submitslurm} and \cmd{pipeline}.
+    They submit SLURM batch scripts for many samples at once, record each submission in a
+    per-sample \emph{pipeline entries} file and chain the steps with SLURM dependencies.
+    Smaller helpers are \cmd{listnodes}, \cmd{kct-list}, \cmd{GPU} and \cmd{REDIS}.
+  \item[laupy-pipelines (the cookbook)] A git repository of \emph{recipes}, for example
+    \cmd{microct\_root} and \cmd{nanoct\_root}. A recipe holds the \cmd{sbatch/} scripts, helper
+    \cmd{bin/} and \cmd{script/} programs, and an \cmd{INFO} file with the sequence of
+    \cmd{submitslurm} commands that forms the pipeline.
+  \item[lautools-browser] A desktop application (PySide6) that ties these together. It finds
+    beamtimes on GPFS, creates projects from recipes, creates working directories, runs the
+    pipeline commands in an embedded shell and shows the live state of every job.
+\end{description}
+
+The browser and the command line tools share the same laupy API and the same files on disk.
+You can switch between them at any time: a job submitted in a terminal appears in the
+browser's \ui{Status} tab, and a job retired in the browser is shown as retired by
+\cmd{pipeline status}.
+
+% ======================================================================
+\section{Concepts and directory layout}
+% ======================================================================
+
+\subsection{The beamtime on GPFS}
+
+Every beamtime has a core directory
+\begin{center}\cmd{/asap3/petra3/gpfs/<beamline>/<year>/data/<beamtime-id>/}\end{center}
+with four areas:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Area & Content and use \\
+\midrule
+\cmd{raw/} & Images from the scans, one subdirectory per scan (TIFF frames, \cmd{*\_nexus.h5}, \cmd{scan.log}). \textbf{Read-only}: never write here. \\
+\cmd{processed/} & Final results meant to be kept and handed to users (reconstructions, figures, movies). \\
+\cmd{scratch\_cc/} & Temporary and intermediate files. Laupy projects (workspaces) live here, typically as \cmd{scratch\_cc/kct\_<label>}. \\
+\cmd{shared/} & Files shared with the beamtime team. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The core directory also contains \cmd{beamtime-metadata-<id>.json} with the title, PI, beamline,
+setup (e.g.\ \emph{microtomography}) and retention period. lautools-browser reads this file.
+
+\subsection{Projects}
+
+A \emph{project} (also called a workspace) is a directory in \cmd{scratch\_cc}. Its tools come
+from a recipe and its data from the beamtime. lautools-browser creates it from a recipe
+(Section~\ref{sec:newproject}); the result for beamtime 11008741 looks like this:
+
+\begin{terminal}[listing options={basicstyle=\ttfamily\scriptsize}]
+/asap3/petra3/gpfs/p05/2021/data/11008741/
+|-- beamtime-metadata-11008741.json
+|-- raw/                                    read-only scan data
+|   |-- syn0101_17L_Ti_12w_000/
+|   |-- syn0158_103R_Mg10Gd_4w_005/
+|   `-- ...
+|-- processed/                              final results
+|-- shared/
+`-- scratch_cc/
+    `-- kct_p05_2021_11008741/              the PROJECT (root directory)
+        |-- INFO     -> ~/.local/share/laupy_browser/workbench/kct_p05_2021_11008741_microct_root/INFO
+        |-- bin      -> .../workbench/kct_p05_2021_11008741_microct_root/bin
+        |-- sbatch   -> .../workbench/kct_p05_2021_11008741_microct_root/sbatch
+        |-- script   -> .../workbench/kct_p05_2021_11008741_microct_root/script
+        |-- raw        -> /asap3/petra3/gpfs/p05/2021/data/11008741/raw
+        |-- processed  -> /asap3/petra3/gpfs/p05/2021/data/11008741/processed
+        |-- scratch_cc -> /asap3/petra3/gpfs/p05/2021/data/11008741/scratch_cc
+        |-- shared     -> /asap3/petra3/gpfs/p05/2021/data/11008741/shared
+        |-- wd/                             working directory
+        `-- wd_test/                        a second working directory
+\end{terminal}
+
+The recipe directories (\cmd{INFO}, \cmd{bin}, \cmd{sbatch}, \cmd{script}) are symbolic links to
+a private copy of the recipe in your \emph{workbench}. You can adapt the scripts for one beamtime
+without touching the cookbook, and the workbench is a git repository, so your changes stay
+versioned.
+
+\subsection{Working directories and processing units}
+
+A \emph{working directory} (\cmd{wd}, or \cmd{wd\_<suffix>} for variants) contains one
+subdirectory per sample, created from \cmd{raw/} by \cmd{script/00createWorkingDirectory} or by
+the browser's \menu{Create wd}. Each such subdirectory is a \emph{processing unit}: every
+pipeline step runs once per processing unit, and each one keeps its own pipeline bookkeeping.
+
+\begin{terminal}[listing options={basicstyle=\ttfamily\scriptsize}]
+kct_p05_2021_11008741/               ROOT DIR (where you run submitslurm / pipeline)
+|-- sbatch/                          SLURM scripts           (--slurm-dir, default sbatch)
+`-- wd/                              working directory       (-w, default wd)
+    |-- syn0101_17L_Ti_12w_000/      processing unit subdir  (selected with -p PATTERN)
+    |   |-- raw -> .../raw/syn0101_17L_Ti_12w_000
+    |   |-- h5  -> .../raw/syn0101_17L_Ti_12w_000/..._nexus.h5
+    |   |-- params                   scan metadata used by the scripts
+    |   |-- ...                      data produced by the pipeline steps
+    |   `-- pipeline/
+    |       |-- dag.json             PIPELINE_ENTRIES: one entry per submitted job
+    |       |-- exec.sh              every command submitted for this unit
+    |       `-- log/                 <script>-<node>-<slurmid>.out / .err
+    `-- syn0158_103R_Mg10Gd_4w_005/
+        `-- ...
+\end{terminal}
+
+\subsection{Pipeline entries, steps and the DAG}
+
+Every job submitted through laupy adds an \emph{entry} to \cmd{pipeline/dag.json} of its
+processing unit. An entry stores the script, the job name, the command, the SLURM ID, the last
+known SLURM state, the jobs it depends on and, once retired, who retired it and why
+(Appendix~\ref{app:fields}).
+
+Each entry belongs to a \emph{node} of a directed acyclic graph (DAG), chosen with
+\cmd{-{}-pipeline-step}:
+
+\begin{itemize}
+  \item \textbf{Numeric steps} (\cmd{1}, \cmd{2}, \ldots) form a chain: a job of step $n$ waits for
+    all unfinished jobs of steps $<n$ in the same processing unit. Several scripts may share a step
+    number; they then run in parallel.
+  \item \textbf{Named nodes} (e.g.\ \cmd{warmup}, \cmd{reco}) depend only on the nodes listed with
+    \cmd{-{}-dependencies}, which may also be numeric steps.
+  \item \textbf{Step \cmd{-1}} (the default) submits a plain job outside the DAG. It is not
+    recorded in \cmd{dag.json}.
+\end{itemize}
+
+When a job is submitted, laupy looks up the not-yet-completed jobs of all ancestor nodes and passes
+them to \cmd{sbatch -{}-dependency=afterok:\ldots}. If an ancestor has already failed, the
+submission is refused, because SLURM would never start the job.
+
+\subsection{Entry lifecycle}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+State & Meaning and what to do \\
+\midrule
+\cmd{PENDING} & Queued, waiting for resources or dependencies. \\
+\cmd{RUNNING} & Executing. Logs grow in \cmd{pipeline/log}. \\
+\cmd{COMPLETING} & Short cleanup phase after the job ended. Normally leave it alone. \\
+\cmd{COMPLETED} & Finished successfully. Hidden by default in the status views. \\
+\cmd{FAILED}, \cmd{TIMEOUT}, \cmd{CANCELLED}, \cmd{OUT\_OF\_MEMORY} & Ended without success. Inspect the logs, then \emph{retire} the entry and resubmit. \\
+\textit{retired} & Not a SLURM state: a flag in the entry. Retired entries are kept for history but no longer count as dependencies, and they are hidden by default. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The typical life of an entry is
+\emph{submitted} $\rightarrow$ \emph{refreshed} (state updated from SLURM) $\rightarrow$
+\emph{finished} or \emph{cancelled} $\rightarrow$ \emph{retired}.
+Once a job reaches a final state, its state is cached in \cmd{dag.json}, so SLURM is not asked
+about it again.
+
+\begin{note}[Efficient SLURM queries]
+Both the browser and the command line tools load the entries of all selected processing units
+and ask SLURM about all active jobs in one batched \cmd{sacct}/\cmd{squeue} call (500 IDs per
+call). A status refresh of 100 samples therefore costs one or two queries, not 100.
+Files are written only when something changed. When saving, changes are merged with the file on
+disk, so a \cmd{submitslurm} running at the same time as the browser does not lose entries.
+\end{note}
+
+% ======================================================================
+\section{Installation and environment}
+% ======================================================================
+
+On Maxwell, the shared environment \cmd{/data/hereon/wp/group/laupy/share/mamba\_env/lau}
+provides laupy, lautools and their dependencies. To use your own installation:
+
+\begin{terminal}
+pip install --user --upgrade git+https://github.com/kulvait/KCT_laupy.git
+pip install --user --upgrade 'git+https://github.com/kulvait/KCT_lautools.git#egg=lautools[full]'
+\end{terminal}
+
+The pipelines also call the compiled \cmd{kct-} and \cmd{dentk-} tools. If they are not on your
+\cmd{PATH}, add \cmd{/data/hereon/wp/group/laupy/bin/}, either in your shell or in the browser's
+PATH editor (Section~\ref{sec:path}).
+
+\begin{warning}[Upgrading]
+Since version 1.2.5, entries use the fields \cmd{processing\_unit\_subdir} and
+\cmd{processing\_unit\_name}. Older \cmd{dag.json} files are converted automatically on the next
+read. Older laupy versions do not understand the new fields, so upgrade laupy and lautools
+together, and do not mix versions on the same project.
+\end{warning}
+
+% ======================================================================
+\section{lautools-browser}
+% ======================================================================
+
+\subsection{Starting the browser}
+
+Start the browser from a Maxwell desktop session (FastX/X2Go) or a terminal with X forwarding:
+
+\begin{terminal}
+lautools-browser
+\end{terminal}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Option & Effect \\
+\midrule
+\cmd{-{}-laupy-db PATH} & Use another SQLite database (e.g.\ for tests). \\
+\cmd{-{}-qt-scale-factor F} & UI scale, e.g.\ \cmd{1}, \cmd{1.25}, \cmd{1.5}. \textbf{The default is 1.9}, suited to high-DPI screens. Use \cmd{1} if the window is too large. \\
+\cmd{-{}-no-qt-use-physical-dpi} & Leave Qt's DPI settings to the system. \\
+\cmd{-{}-qt-disable-highdpi} & Disable high-DPI scaling. \\
+\cmd{-{}-qt-scale-rounding-policy} & \cmd{Round} or \cmd{PassThrough}. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\key{Ctrl+C} in the launching terminal closes the application.
+
+All state is kept in \cmd{\textasciitilde/.local/share/laupy\_browser/laupy\_beamtimes.sqlite}:
+known beamtimes, projects, working directories, folder sizes, PATH settings and preferences.
+There is no separate configuration file.
+
+\subsubsection*{First start}
+
+On the first start the dialog \ui{Welcome to Lautools} offers to set up a \emph{cookbook} and a
+\emph{workbench}. Choosing \ui{Yes} creates:
+
+\begin{itemize}
+  \item \cmd{\textasciitilde/.local/share/laupy\_browser/laupy-pipelines}: a clone of the recipe
+    repository, registered as the \emph{Laupy pipelines cookbook};
+  \item \cmd{\textasciitilde/.local/share/laupy\_browser/workbench}: an empty git repository,
+    registered as the \emph{Private workbench}, which receives your project-specific recipe copies.
+\end{itemize}
+
+You can do this later with \menu{File $\rightarrow$ Settings\ldots\ $\rightarrow$ Set up defaults\ldots}.
+
+On later starts the browser reopens the last project and working directory. If the project has an
+\cmd{INFO} file, it opens on the \ui{Pipeline} tab.
+
+\subsection{Main window}
+
+\begin{terminal}
++-------------------------------------------------------------------------------+
+| File  Beamtime  Project  Workspace  Switch  Jobs  Help                        |
++----------------------------+--------------------------------------------------+
+| Subdirectories of wd       |  [Tasks] [Measurements] [Pipeline] [Status]      |
+|  syn0101_17L_Ti_12w_000    |                                                  |
+|  syn0158_103R_Mg10Gd_4w_005|        bash editor / status tree / ...           |
+|  ...                       |                                                  |
++----------------------------+--------------------------------------------------+
+| Ready      Cookbook: up to date . Recipe: 2 files changed  /asap3/.../kct_... [wd]|
++-------------------------------------------------------------------------------+
+\end{terminal}
+
+The window title shows \emph{Laupy -- <project> [<wd>]}. The left panel lists the processing
+units of the selected working directory. Right-click one for:
+
+\begin{itemize}
+  \item \menu{Open Terminal Here}, \menu{Open Thunar Here};
+  \item \menu{Open params} / \menu{Open param.json}: opens the file in the built-in text viewer
+    in edit mode (Section~\ref{sec:viewer});
+  \item \menu{Open parameter files in mousepad} (only if mousepad is installed);
+  \item \menu{Open h5}: the scan's NeXus file in \cmd{hdf5view};
+  \item \menu{Open dag.json}: the pipeline entries file in \cmd{vim}.
+\end{itemize}
+
+The tabs on the right:
+
+\begin{description}[leftmargin=1.5em]
+  \item[Pipeline] a bash editor and console for running the recipe (Section~\ref{sec:pipelinetab});
+  \item[Status] the live status tree of all jobs (Section~\ref{sec:status});
+  \item[Tasks, Measurements] placeholders for future features.
+\end{description}
+
+Messages and errors appear in the status bar at the bottom. On its right are the recipe status
+of the project (Section~\ref{sec:recipestatus}) and the current project and working directory.
+
+\subsection{Menus}
+
+\begin{longtable}{@{}>{\raggedright}p{0.25\linewidth}>{\raggedright\arraybackslash}p{0.7\linewidth}@{}}
+\toprule
+Menu & Items \\
+\midrule
+\endhead
+\menu{File} & \menu{Open Project\ldots} (\key{Ctrl+O}), \menu{Close Project} (\key{Ctrl+W}), \menu{Settings\ldots}, \menu{Exit App} (\key{Ctrl+Q}). \\
+\menu{Beamtime} & One submenu per listed beamtime (the current one is marked) containing \menu{Beamtime Info\ldots}, \menu{Terminal}, \menu{Terminal in scratch\_cc}, the projects of this beamtime, and \menu{New project from recipe\ldots}. At the bottom: \menu{List Beamtimes\ldots}. \\
+\menu{Project} & \menu{Project info\ldots}; terminal and Thunar in the project, in the current \cmd{wd}, in the workbench recipe copy and in the upstream cookbook recipe; \menu{Compare recipe with upstream\ldots} (Section~\ref{sec:recipesync}); \menu{Open terminal in sbatch}; \menu{Open INFO in Pipeline tab / vim / mousepad}; \menu{Create wd} and \menu{Create wd with custom suffix\ldots}. Items whose folder is missing are disabled; tooltips show the path. \\
+\menu{Workspace} & Radio list of the project's \cmd{wd*} directories (rescanned each time the menu opens) and the two \menu{Create wd} items. \\
+\menu{Switch} & Radio list of saved projects that still exist on disk. \\
+\menu{Jobs} & Retire and cancel dialogs, Section~\ref{sec:jobs}. \\
+\menu{Help} & \menu{Project Repository}, \menu{Show GNU GPLv3 License}, \menu{About Lautools}. \\
+\bottomrule
+\end{longtable}
+
+External programs used: \cmd{xfce4-terminal} for terminals, \cmd{thunar} for folders, \cmd{vim}
+(in a terminal) and \cmd{mousepad} for editing, and \cmd{hdf5view} for NeXus files.
+
+\subsection{Beamtimes}
+
+\subsubsection*{Listing beamtimes}
+
+\menu{Beamtime $\rightarrow$ List Beamtimes\ldots} opens the \ui{Beamtimes} dialog.
+
+\begin{itemize}
+  \item \ui{Scan} searches \ui{GPFS base} (default \cmd{/asap3/petra3/gpfs}) for
+    \cmd{<beamline>/<year>/data/<id>} directories containing \cmd{raw}, \cmd{processed} or
+    \cmd{scratch\_cc}, and reads their metadata.
+  \item \ui{Refresh} re-inspects only the beamtimes already known.
+  \item \ui{Show on GPFS} hides archived and vanished beamtimes.
+\end{itemize}
+
+Row colours: \textcolor{green!50!black}{green} means \cmd{scratch\_cc} is writable (you can create
+projects), \textcolor{red!70!black}{red} means read-only, and \textcolor{orange!80!black}{yellow}
+means not on GPFS.
+
+Tick \ui{Listed} for the beamtimes you want in the \menu{Beamtime} menu. \ui{List only writable}
+is a quick start. Double-click the \ui{Listed} cell or use \menu{Rename label} to give a beamtime a
+short label; the default is \cmd{<beamline>\_<year>\_<id>}.
+
+\subsubsection*{Beamtime info}
+
+\menu{Beamtime Info\ldots} shows the metadata (title, PI, setup, proposal, dates, retention) and
+lets you edit the label and a description. The \ui{Beamtime storage} grid shows the sizes of
+\cmd{raw}, \cmd{processed} and \cmd{scratch\_cc}. Sizes are counted in the background (\ui{Count},
+\ui{Refresh all sizes}, \ui{Force recount}) and cached.
+
+\ui{Scan projects and sizes} registers the \cmd{scratch\_cc/kct\_*} projects of the beamtime and
+lists them with their recipe and size. Right-click a project for \menu{Remove database entry},
+\menu{Remove project folder\ldots} or \menu{Remove recipe from workbench\ldots}. Each asks for
+confirmation.
+
+\subsection{Creating a project from a recipe}\label{sec:newproject}
+
+Choose \menu{Beamtime $\rightarrow$ <beamtime> $\rightarrow$ New project from recipe\ldots}. The
+beamtime must have a \cmd{scratch\_cc} directory.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Field & Meaning \\
+\midrule
+\ui{Recipe} & A recipe from the default cookbook, e.g.\ \cmd{microct\_root}. \\
+\ui{Cookbook}, \ui{Workbench} & The registered default collections (set in Settings). \\
+\ui{Scratch project directory} & Default \cmd{scratch\_cc/kct\_<label>}; \cmd{\_001}, \cmd{\_002}, \ldots{} is appended if it exists. It must be new or empty and inside \cmd{scratch\_cc}. \\
+\ui{Workbench copy name} & Default \cmd{<projectdir>\_<recipe>}. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\ui{Create project} then:
+
+\begin{enumerate}
+  \item copies the recipe into the workbench under the copy name;
+  \item prepends a header to the copy's \cmd{INFO} file with the project directory and the beamtime's
+    metadata (beamline, ID, title, PI, \ldots); the original \cmd{INFO} text follows the line
+    \emph{Original INFO content follows:};
+  \item creates the project directory with links to \cmd{raw}, \cmd{processed}, \cmd{scratch\_cc},
+    \cmd{shared} and to every top-level entry of the recipe copy.
+\end{enumerate}
+
+If any step fails, nothing is left behind. No working directory is created yet; see the next
+section.
+
+When the dialog opens, it checks in the background whether the cookbook is behind its remote. If it
+can be updated cleanly, you are asked whether to merge first, so that the project starts from the
+latest recipe (Section~\ref{sec:recipesync}).
+
+\subsection{Creating a working directory}
+
+\menu{Project $\rightarrow$ Create wd} (or \menu{Create wd with custom suffix\ldots}, which creates
+\cmd{wd\_<suffix>}) lists the samples in \cmd{raw/} with
+\cmd{createWorkingDirectoryForMicrotomography} or \cmd{\ldots Nanotomography}, depending on the
+beamtime's setup. In \ui{Select samples for <wd>}, untick the scans you do not want. A log window
+shows the progress, and the log is saved to \cmd{<wd>/createStructure.log}. Each sample gets a
+processing unit subdirectory with links to its raw data and \cmd{h5} file, and a \cmd{params}
+file.
+
+The same can be done in a terminal with the recipe's script:
+
+\begin{terminal}
+script/00createWorkingDirectory wd                        # all samples
+script/00createWorkingDirectory --pattern Ti wd_ti        # only matching scans
+\end{terminal}
+
+\subsection{Project info}
+
+\menu{Project $\rightarrow$ Project info\ldots} opens \ui{Configure Project}, which has:
+\begin{itemize}
+  \item the project name, path (with \ui{Open terminal} in the project root), recipe and description;
+  \item \ui{Recipe status}: the same cookbook and recipe state as in the status bar; click it to
+    compare the recipe with upstream;
+  \item the executable search path (\ui{Project PATH\ldots}, Section~\ref{sec:path});
+  \item the linked beamtime and its metadata;
+  \item storage sizes;
+  \item the \ui{Workspaces} table, listing every \cmd{wd*} with its sample count and size.
+\end{itemize}
+Right-click a workspace to create, open, recreate or delete it, or to remove only its database
+record.
+
+\subsection{Keeping recipes in sync with the cookbook}\label{sec:recipesync}
+
+A project runs its own copy of a recipe in the workbench (Section~\ref{sec:newproject}). Scripts
+improved during a beamtime can be \emph{backported} to the cookbook, and improvements made in the
+cookbook can be taken into the project.
+
+\subsubsection*{How the upstream recipe is found}
+
+For projects created by the browser, the database records which cookbook recipe the copy came
+from. For other projects, for example \cmd{kct\_*} folders found by \ui{Scan projects and sizes},
+the link is \emph{inferred}:
+\begin{itemize}
+  \item the recipe copy is the folder the project's \cmd{sbatch}, \cmd{INFO}, \cmd{script} or
+    \cmd{bin} symlinks point into;
+  \item the upstream recipe is the recipe of the default cookbook whose name ends the copy's
+    name: \cmd{kct\_p05\_2021\_11008741\_microct\_root} $\rightarrow$ \cmd{microct\_root}.
+\end{itemize}
+\ui{Remember this link} stores an inferred link in the database. Both folders must lie inside the
+cookbook and workbench registered in Settings.
+
+\subsubsection*{Recipe status}\label{sec:recipestatus}
+
+When a project is opened, the browser compares its recipe copy with the upstream recipe and checks
+the cookbook's git repository, in the background. The result is shown in the status bar and in
+\ui{Project info}:
+
+\begin{terminal}
+Cookbook: 1 new upstream commit, 1 uncommitted change . Recipe: 4 files changed
+\end{terminal}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Text & Meaning \\
+\midrule
+\emph{Cookbook: up to date} & The cookbook branch matches its remote and has no uncommitted changes. \\
+\emph{N new upstream commits} & The remote (e.g.\ GitHub) has newer recipes. \\
+\emph{N unpushed commits} & Local cookbook commits not yet pushed. \\
+\emph{N uncommitted changes} & Modified files in the cookbook, e.g.\ after a backport. \\
+\emph{no upstream branch}, \emph{not under git}, \emph{check failed} & The state cannot be determined; see the tooltip. \\
+\emph{Recipe: up to date} & The project's recipe copy equals the cookbook recipe. \\
+\emph{Recipe: N files changed} & Files differ, exist only in the project, or only upstream. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Cookbook problems are shown in \textcolor{orange!80!black}{\textbf{orange}}. A changed project
+recipe is normal (scripts adapted for this beamtime), so it is reported but not highlighted.
+Hover for details: both paths, the git state, the changed files, and advice such as
+\emph{commit or stash local changes before merging}. Click to open the comparison dialog.
+
+The remote is fetched at most once every 5 minutes per cookbook. Git never asks for credentials
+here, and a fetch gives up after 30\,s, so a missing network only shows \emph{check failed}.
+
+\subsubsection*{Compare recipe with upstream}
+
+\menu{Project $\rightarrow$ Compare recipe with upstream\ldots} (or a click on the recipe status)
+lists the files that differ:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Control & Effect \\
+\midrule
+Status \emph{modified}, \emph{only in project}, \emph{only in upstream} & How the file differs. \ui{Show identical files} lists the rest too. \cmd{INFO} is compared without the header lautools added to the project copy. \\
+\ui{Show diff} (or double-click) & Unified diff in the text viewer: \cmd{-} upstream, \cmd{+} project. \\
+\ui{Backport to upstream\ldots} & Copy the selected project files into the cookbook recipe, after a confirmation listing them. Nothing is committed. \\
+\ui{Update project from upstream\ldots} & Copy the selected cookbook files into the project recipe. \cmd{INFO} keeps its project header. \\
+\ui{Terminal in upstream} & Shell in the cookbook recipe, to review, commit and push. \\
+\ui{Check upstream} & Fetch the remote now. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection*{Updating the cookbook}
+
+If the cookbook has exactly one remote, no local commits and no uncommitted changes, and the remote
+is newer, the dialog asks:
+
+\begin{note}[Cookbook not up to date]
+Your cookbook is N commit(s) behind origin/main and has no local changes. Do you want to update it
+with a clean (fast-forward) merge?
+\end{note}
+
+\ui{Yes} runs \cmd{git merge -{}-ff-only}. If the cookbook has local changes or commits, nothing
+is merged automatically; the status explains why. Resolve it in a terminal, for example:
+
+\begin{terminal}
+cd ~/.local/share/laupy_browser/laupy-pipelines
+git status
+git stash            # or: git commit -am "..."  && git push
+git pull --ff-only
+\end{terminal}
+
+\subsubsection*{Backporting an improved script}
+
+\begin{enumerate}
+  \item Open \menu{Project $\rightarrow$ Compare recipe with upstream\ldots}. If the cookbook is
+    behind, accept the fast-forward first.
+  \item Select the improved file, check it with \ui{Show diff}, then \ui{Backport to upstream\ldots}.
+  \item In \ui{Terminal in upstream}: \cmd{git diff}, \cmd{git commit}, \cmd{git push}.
+  \item The status bar then shows the cookbook as up to date again.
+\end{enumerate}
+
+\subsection{Pipeline tab: running the recipe}\label{sec:pipelinetab}
+
+The \ui{Pipeline} tab combines a script editor (top) with a persistent bash console (bottom) that
+starts in the project directory. Opening a project loads its \cmd{INFO} file into the editor, so
+the pipeline can be run line by line.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Action & Effect \\
+\midrule
+\key{Ctrl+Return} & Run the selection, or the current line if nothing is selected. \\
+\ui{File} (\key{Ctrl+Shift+Return}) & Run the whole file. The INFO header written by lautools is skipped. \\
+\ui{Define function}, \ui{Load functions} (\key{Ctrl+Shift+L}) & Define shell functions from the editor in the console. \ui{Auto-load functions} does this automatically. \\
+\ui{Open\ldots}, \ui{Save} (\key{Ctrl+S}), \ui{Save As\ldots}, \ui{Reload} & File operations. \\
+\ui{Interrupt}, \ui{Restart shell}, \ui{Clear} & Console control. \\
+\ui{PATH\ldots} & Edit the PATH of the console and of jobs (Section~\ref{sec:path}). \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection*{submitslurm context}
+
+The row \ui{submitslurm context: -w \_\_ -p \_\_ -f \_\_} sets default values for these
+\cmd{submitslurm} options in the console:
+
+\begin{itemize}
+  \item \cmd{-w} follows the working directory selected in the browser, so the \cmd{INFO} lines
+    run on the current \cmd{wd} without editing.
+  \item \cmd{-p} restricts the run to matching samples, e.g.\ for testing on one scan.
+  \item \cmd{-f} sets the default partition.
+\end{itemize}
+
+An option given explicitly in the command wins, unless its \ui{force} box is ticked.
+
+\subsection{Status tab: live job status}\label{sec:status}
+
+The \ui{Status} tab shows every pipeline entry of the current working directory as a tree.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Column & Content \\
+\midrule
+Subdir & The processing unit. \\
+Step/Node & The DAG node. \\
+Slurm ID, Name & SLURM job ID and job name (\cmd{<script>\_<subdir>}). \\
+State & SLURM state. Rows are coloured: \textcolor{orange!80!black}{PENDING} yellow, \textcolor{green!50!black}{RUNNING} green, \textcolor{violet}{COMPLETED} purple, \textcolor{red!70!black}{FAILED/CANCELLED/TIMEOUT} red, REQUEUED/COMPLETING orange. \\
+Details & Elapsed time, nodes or pending reason. Expand a row for the execution directory, log paths, entry ID, command, dependencies and retirement status. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection*{Refreshing}
+
+\begin{itemize}
+  \item \ui{Show Completed} and \ui{Show Retired} add the entries that are hidden by default.
+  \item \ui{Auto} sets the interval: \emph{Off}, 10\,s, 30\,s (default), 1\,min or 2\,min. The choice is remembered.
+  \item The \ui{Refresh} button fills up as the next automatic refresh approaches; hover for the
+    remaining time. While a refresh runs, a band moves across it and the indicator shows
+    \emph{Refreshing\ldots}. Click it to refresh immediately.
+  \item Automatic refresh pauses while the tab is hidden or the window is minimised. When you
+    return to the tab, the button flashes briefly and a refresh starts at once.
+\end{itemize}
+
+\subsubsection*{Context menu}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Item & Effect \\
+\midrule
+\menu{Open Both StdOut and StdErr}, \menu{StdOut: \ldots}, \menu{StdErr: \ldots} & Open the logs in the text viewer. For a RUNNING job, \ui{Follow} is on, so new output appears as it is written. \\
+\menu{Open logs in mousepad} & Use an external editor instead. \\
+\menu{Open Terminal Here} & Terminal in the processing unit subdirectory. \\
+\menu{Cancel Job} & PENDING/RUNNING jobs: \cmd{scancel}, then record CANCELLED, immediately without a confirmation dialog. \\
+\menu{Retire Job} & FAILED/CANCELLED/TIMEOUT jobs: mark the entry retired. \\
+\menu{Resubmit Job} & FAILED/CANCELLED/TIMEOUT jobs: submit the same command again with the project PATH. The old entry is retired (\emph{Resubmitted}) only after the new submission succeeds. An entry that is already retired cannot be resubmitted. \\
+\menu{Open <script>} & Open the job's sbatch script in vim. \\
+\menu{Show DAG entry JSON\ldots} & The complete entry as JSON, for inspection. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Jobs menu: bulk retire and cancel}\label{sec:jobs}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Item & Equivalent and effect \\
+\midrule
+\menu{Retire jobs in <wd>\ldots} & \cmd{pipeline retire -w <wd>}. Lists FAILED, CANCELLED and TIMEOUT entries; \ui{Retire selected (N)}. \\
+\menu{Cancel jobs in <wd>\ldots} & \cmd{pipeline cancel -w <wd>}. Lists PENDING, RUNNING, REQUEUED and COMPLETING entries; \ui{scancel selected (N)} cancels them and records them as cancelled. \\
+\menu{scancel SLURM jobs of user <user>\ldots} & Lists all your SLURM jobs, including jobs not started by laupy, and cancels them directly, without looking at any pipeline. Afterwards the affected entries show as CANCELLED and can be retired. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Each dialog is a sortable table with a checkbox per job and \ui{Select all}/\ui{Select none}.
+\begin{itemize}
+  \item Everything is preselected except jobs in \textbf{COMPLETING} state. These are normally
+    seconds away from finishing, and cancelling them can turn a successful job into a failed one.
+    Ticking one asks for confirmation; cancel it only if it is stuck.
+  \item In the user-wide \cmd{scancel} dialog, the job the browser itself runs in (when started
+    inside a SLURM allocation) is greyed out and cannot be selected.
+  \item The default button is \ui{Cancel}, so pressing \key{Enter} never cancels jobs by accident.
+\end{itemize}
+
+\subsection{Text viewer}\label{sec:viewer}
+
+Logs, parameter files and JSON entries open in a built-in viewer window. It runs alongside the
+main window, so you can keep working while it is open.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Control & Effect \\
+\midrule
+\ui{Reload} (\key{F5}) & Read the file again. \\
+\ui{Follow} & Re-read growing files every 2\,s and stay at the end, like \cmd{tail -f}. It never discards unsaved edits. \\
+\ui{Wrap} & Toggle line wrapping. \\
+\ui{Edit} & Allow editing (switches Follow off). Tabs with unsaved changes show \cmd{*}. \\
+\ui{Save} (\key{Ctrl+S}) & Save safely. If the file changed on disk since loading, you are asked first. \\
+\ui{Find} (\key{Ctrl+F}) & Find bar: \key{Enter} next, \key{Shift+Enter} previous, \ui{Match case}, \key{Esc} closes. \\
+\ui{A+}/\ui{A-} (\key{Ctrl++}/\key{Ctrl+-}) & Zoom. \\
+\ui{Full screen} (\key{F11}) & Toggle full screen. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Files are loaded in the background. Files larger than 32\,MiB are shown from their last 32\,MiB
+and are read-only.
+
+\subsection{Settings and PATH}\label{sec:path}
+
+\menu{File $\rightarrow$ Settings\ldots} shows the running Python environment and the registered
+\emph{locations} (cookbooks, workbenches and other folders) with their git state.
+
+\begin{itemize}
+  \item Choose the default \ui{Cookbook} and \ui{Workbench}.
+  \item \ui{Add\ldots}, \ui{Edit\ldots}, \ui{Remove} manage the registrations; \ui{Remove} never
+    deletes files.
+  \item Tick \ui{In PATH} for locations whose programs project terminals should find.
+  \item \ui{Inspect Git} shows the git state; \ui{Set up defaults\ldots} creates the cookbook and
+    workbench of the first start.
+\end{itemize}
+Changes take effect with \ui{Save}.
+
+The PATH editor (\ui{PATH\ldots} in the Pipeline tab) lists directories with a \ui{Global} and a
+\ui{This project} checkbox. The resulting PATH is \emph{project entries, global entries, then the
+inherited PATH}. It applies to the embedded console and to jobs resubmitted from the Status tab.
+
+% ======================================================================
+\section{Command line tools}
+% ======================================================================
+
+\subsection{Common options}
+
+\cmd{submitslurm} and \cmd{pipeline} select their directories in the same way. Run them from the
+project directory or pass \cmd{-d}.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Option & Meaning \\
+\midrule
+\cmd{-d, -{}-root-dir DIR} & Project (root) directory. Default: the current directory. \\
+\cmd{-w, -{}-working-dir WD} & Working directories, comma-separated or repeated (\cmd{-w wd,wd\_test} or \cmd{-w wd -w wd\_test}). Default \cmd{wd}. \\
+\cmd{-{}-slurm-dir DIR} & Directory of the sbatch scripts, relative to the root. Default \cmd{sbatch}. \\
+\cmd{-p, -{}-pattern PAT} & Only processing units whose name \emph{contains} PAT (a substring, not a glob). \\
+\cmd{-{}-dry-run} & Show what would be done, change nothing (submission, \cmd{create}, \cmd{clean}, \cmd{delete}, \cmd{retire}, \cmd{cancel}). \\
+\cmd{-{}-verbose} & Print the parsed arguments and details. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{warning}[Patterns are substrings]
+\cmd{-p syn01} also matches \cmd{syn010}, \cmd{syn011}, \ldots{} and \cmd{-p 001} matches every
+sample whose name contains \cmd{001}. Check the matched list with \cmd{-{}-dry-run} before
+destructive actions.
+\end{warning}
+
+\subsection{submitslurm}
+
+\begin{terminal}
+submitslurm [options] [--pipeline-step NODE [--dependencies NODE,...]] SCRIPT.sbatch
+\end{terminal}
+
+\cmd{submitslurm} submits \cmd{sbatch/SCRIPT.sbatch} once per selected processing unit. Each job:
+\begin{itemize}
+  \item is named \cmd{<script>\_<subdir>};
+  \item runs as \cmd{sbatch/SCRIPT.sbatch <subdir> <args from -a>} from the root directory;
+  \item writes its logs to \cmd{<subdir>/pipeline/log/<script>-<node>-<jobid>.out} and \cmd{.err}.
+\end{itemize}
+
+\subsubsection*{Options}
+
+\begin{longtable}{@{}>{\raggedright}p{0.36\linewidth}>{\raggedright\arraybackslash}p{0.6\linewidth}@{}}
+\toprule
+Option & Meaning \\
+\midrule
+\endhead
+\cmd{-a, -{}-slurmargs "ARGS"} & Arguments passed to the script after the subdir. Quote them as one string. \\
+\cmd{-f, -{}-partition P} & SLURM partition(s). Default \cmd{allcpu,allgpu}. \\
+\cmd{-g, -{}-gpu-nodes} & Only nodes with GPUs. \\
+\cmd{-e, -{}-excellent-nodes} & Only the best (A100+) nodes. \\
+\cmd{-s, -{}-strong-nodes} & Only strong CPU nodes. \\
+\cmd{-x, -{}-exclude-weak-nodes} & Exclude weak nodes. \\
+\cmd{-n, -{}-nodelist LIST} & Explicit node list. \\
+\cmd{-{}-feature-provider P} & Where the node hardware comes from: \cmd{app-managed-list} (default), \cmd{list} or \cmd{slurm}; see \emph{Node hardware} below. \\
+\cmd{-{}-list FILE}, \cmd{-{}-no-list} & Use this node table as it is, or no table at all (hardware from SLURM only). \\
+\cmd{-o, -{}-oversubscribe} & Allow sharing nodes. \\
+\cmd{-t, -{}-delaytime S} & Wait S seconds between submissions. \\
+\cmd{-{}-python PATH} & Python (Conda/Mamba) environment of the jobs, exported as \cmd{LAUPY\_PYTHON} and recorded in the entries (see \emph{Environment of the jobs}). \\
+\cmd{-{}-env NAME=VALUE} & Extra environment variable for every job (repeatable; no commas in VALUE). \\
+\cmd{-{}-pipeline-step NODE} & DAG node: a step number, a name, or \cmd{-1} (default, outside the DAG). \\
+\cmd{-{}-dependencies N,\ldots} & Parents of a \emph{named} node. Not allowed with numeric steps. \\
+\midrule
+\cmd{-{}-skip-range}, \cmd{-{}-skip-state} & Do not submit if an entry of the same node in the range is in one of the states. Default range \cmd{cmd} (same command), states PENDING RUNNING REQUEUED. Ranges: \cmd{none}, \cmd{cmd}, \cmd{jobname}, \cmd{step}. \\
+\cmd{-{}-retire-range}, \cmd{-{}-retire-state} & After a successful submission, retire earlier entries in the range with these states. Default \cmd{cmd} with FAILED CANCELLED TIMEOUT. \\
+\cmd{-{}-cancel-range}, \cmd{-{}-cancel-state} & Before submitting, cancel active entries in the range with these states and retire them. Default \cmd{none}. \\
+\midrule
+\cmd{-{}-create-pipeline-only}, \cmd{-{}-clean-dag}, \cmd{-{}-delete-pipeline-only} & Same as \cmd{pipeline create/clean/delete}. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection*{Node selection}
+
+The node options need the hardware of the nodes (for the classes) and which nodes exist and are
+up. By default the hardware comes from the app-managed node table and SLURM is only asked for the
+node states with one fast \cmd{sinfo} call (see \emph{Node hardware} under \cmd{listnodes}); without
+node options SLURM is not queried at all. Which nodes are available always comes from SLURM; the
+hardware source only changes which \emph{class} a node is in. \cmd{-{}-verbose} prints where the
+hardware came from and how long each SLURM query took. \cmd{-n} takes precedence over \cmd{-e} over
+\cmd{-s}; \cmd{-g} limits them to GPU nodes, and \cmd{-x} then removes weak nodes from them, or
+alone excludes the weak nodes. Required nodes are limited to nodes that are up (not down, drained
+or not responding) in the partition: requested nodes that are not up are skipped with a note.
+If none of the nodes from \cmd{-n} or \cmd{-g} is available, \cmd{submitslurm} stops with an
+error and submits nothing, so a GPU job never runs on a CPU node by accident. If none of the
+\cmd{-e} or \cmd{-s} nodes is available, it prints a note and submits without a node restriction.
+
+\subsubsection*{Environment of the jobs}
+
+Jobs inherit the environment of \cmd{submitslurm} (\cmd{-{}-export=ALL}): \cmd{PATH}, conda
+environment, and so on. On top of it, every job gets
+\begin{itemize}
+  \item \cmd{PIPELINE\_SCRIPTNAME}: the script name, e.g.\ \cmd{06computeExtinction.sbatch};
+  \item \cmd{PIPELINE\_JOBNAME}: the job name, e.g.\ \cmd{06computeExtinction\_syn001\_ti\_12w};
+  \item \cmd{LD\_PRELOAD}: set to empty;
+  \item any \cmd{-{}-env} variables, which may override the three above;
+  \item \cmd{LAUPY\_PYTHON}, if a Python environment is chosen (below).
+\end{itemize}
+\cmd{LAUPY\_PYTHON} is the path of a Conda/Mamba environment; \cmd{initGanrec} activates it instead of
+its default environment. \cmd{submitslurm} takes it from \cmd{-{}-python PATH}, else from
+\cmd{-{}-env LAUPY\_PYTHON=PATH}, else from \cmd{LAUPY\_PYTHON} of the submitting shell (giving both
+\cmd{-{}-python} and a different \cmd{-{}-env LAUPY\_PYTHON} is an error). The path must be a
+directory with an executable \cmd{bin/python} and is made absolute. It is then exported explicitly
+to every job and recorded in the pipeline entry (\cmd{laupy\_python}), so a resubmission, e.g.\
+from \cmd{lautools}, uses the same environment whatever the resubmitting process has set. Without
+it, jobs use the default environment of \cmd{initGanrec}, and so do their resubmissions.
+\begin{lstlisting}
+$ submitslurm --python ~/.conda/envs/test --pipeline-step 5 05reconstructCGLS.sbatch
+\end{lstlisting}
+Use \cmd{-{}-verbose} to print the inherited \cmd{CONDA\_PREFIX} and \cmd{PATH} (duplicates and
+missing directories are flagged), the per-job variables and the full \cmd{sbatch} command.
+
+\subsubsection*{Output}
+
+Default output shows one block per job, with paths relative to the root:
+
+\begin{terminal}[listing options={basicstyle=\ttfamily\footnotesize}]
+$ submitslurm --pipeline-step 3 06computeExtinction.sbatch
+submitslurm with parameters: --pipeline-step 3 06computeExtinction.sbatch
+ROOT DIR: /asap3/petra3/gpfs/p05/2021/data/11008741/scratch_cc/kct_p05_2021_11008741
+
+Job 06computeExtinction_syn001_ti_12w in wd/syn001_ti_12w:
+    CMD: sbatch/06computeExtinction.sbatch wd/syn001_ti_12w
+    INFO: submitted 24170107, node 3, after 02destar.sbatch (24170104)
+
+Job 06computeExtinction_syn002_mg_4w in wd/syn002_mg_4w:
+    CMD: sbatch/06computeExtinction.sbatch wd/syn002_mg_4w
+    INFO: submitted 24170108, node 3, after 01createZarrStructure.sbatch (24170102), 02destar.sbatch (24170105)
+
+Job 06computeExtinction_syn003_peek_8w in wd/syn003_peek_8w:
+    CMD: sbatch/06computeExtinction.sbatch wd/syn003_peek_8w
+    ERROR: not submitted, Dependency job 01createZarrStructure_syn003_peek_8w, ID=24170103 has failed with status FAILED
+\end{terminal}
+
+Submitting the same command again while the first one is still queued or running is skipped:
+
+\begin{terminal}
+$ submitslurm --pipeline-step 2 -p syn001 -a "--zar-input-file h2k_ll.zar" 02destar.sbatch
+...
+Job 02destar_syn001_ti_12w in wd/syn001_ti_12w:
+    CMD: sbatch/02destar.sbatch wd/syn001_ti_12w --zar-input-file h2k_ll.zar
+    INFO: skipped, same command already queued or running (24170104 RUNNING)
+\end{terminal}
+
+With \cmd{-{}-verbose -{}-dry-run} you can check a submission without sending it:
+
+\begin{terminal}[listing options={basicstyle=\ttfamily\footnotesize}]
+$ submitslurm --verbose --dry-run --pipeline-step 4 -p syn001 -f allgpu --env OMP_NUM_THREADS=8 -a "--binning 2 extb2/ext.den" 09filterFBP.sbatch
+...
+GLOBAL ENV (inherited by every job via --export=ALL):
+    CONDA_PREFIX: /data/hereon/wp/group/laupy/share/mamba_env/lau
+    PATH:
+        $CONDA_PREFIX/bin
+        /data/hereon/wp/group/laupy/bin
+        /usr/bin
+        ...
+ROOT DIR: /asap3/.../scratch_cc/kct_p05_2021_11008741
+SBATCH OPTIONS: --partition=allgpu
+
+Job 09filterFBP_syn001_ti_12w in wd/syn001_ti_12w:
+    CMD: sbatch/09filterFBP.sbatch wd/syn001_ti_12w --binning 2 extb2/ext.den
+    ENV: PIPELINE_SCRIPTNAME=09filterFBP.sbatch PIPELINE_JOBNAME=09filterFBP_syn001_ti_12w LD_PRELOAD= OMP_NUM_THREADS=8
+    SBATCH: sbatch --partition=allgpu --job-name=09filterFBP_syn001_ti_12w
+            --export=ALL,PIPELINE_SCRIPTNAME=09filterFBP.sbatch,
+                PIPELINE_JOBNAME=09filterFBP_syn001_ti_12w,LD_PRELOAD=,OMP_NUM_THREADS=8
+            --output=wd/syn001_ti_12w/pipeline/log/09filterFBP-%N-%j.out
+            --error=wd/syn001_ti_12w/pipeline/log/09filterFBP-%N-%j.err
+            sbatch/09filterFBP.sbatch wd/syn001_ti_12w --binning 2 extb2/ext.den
+    INFO: dry run, not submitted
+\end{terminal}
+
+\subsubsection*{Named nodes}
+
+Use names for side branches that should not block the numbered chain:
+
+\begin{terminal}
+submitslurm --pipeline-step warmup 01scanTimingDiagnostics.sbatch
+submitslurm --pipeline-step preview --dependencies 5 -a "..." 00reconstructCGLS.sbatch
+\end{terminal}
+
+\subsection{pipeline}
+
+\begin{terminal}
+pipeline [common options] SUBCOMMAND [subcommand options]
+\end{terminal}
+
+Common options may be given before or after the subcommand.
+
+\begin{longtable}{@{}>{\raggedright}p{0.3\linewidth}>{\raggedright\arraybackslash}p{0.66\linewidth}@{}}
+\toprule
+Subcommand & Effect \\
+\midrule
+\endhead
+\cmd{status} & State of the entries of every selected processing unit. \cmd{-{}-show-completed} and \cmd{-{}-show-retired} include the hidden ones. \\
+\cmd{log ID} & Show the logs of one entry, given its SLURM ID or entry \cmd{job\_id}. \cmd{-{}-stdout} or \cmd{-{}-stderr} limits it to one stream. \\
+\cmd{retire} & Mark entries retired. Default: all entries in FAILED, CANCELLED, TIMEOUT. Narrow with \cmd{-{}-step N \ldots}, \cmd{-{}-state S \ldots} or \cmd{-{}-job ID \ldots}; \cmd{-{}-job} takes space-separated SLURM job IDs (\cmd{-{}-job 24170104 24170107}) or laupy entry IDs (the 32-character \emph{Job ID}). \\
+\cmd{cancel} & \cmd{scancel} active jobs and record them as cancelled. Default: all entries in PENDING, RUNNING, REQUEUED, COMPLETING. Same narrowing options. \\
+\cmd{create} & Create \cmd{pipeline/log} in every processing unit (submission does this too). \\
+\cmd{clean} & Forget all entries (empty \cmd{dag.json}). Logs are kept. \\
+\cmd{delete} & Remove the \cmd{pipeline/} directory with entries and logs. Other data is kept. \\
+\bottomrule
+\end{longtable}
+
+\begin{warning}[Retire and cancel act on everything by default]
+\cmd{pipeline cancel} without \cmd{-{}-job} or \cmd{-{}-step} cancels \emph{all} active jobs of
+all selected processing units. Preview the selection with \cmd{-{}-dry-run}, which lists the
+entries that \emph{would be} retired or cancelled and changes nothing, or use the browser's
+\menu{Jobs} dialogs, which let you untick jobs.
+\end{warning}
+
+\subsubsection*{Examples}
+
+\begin{terminal}[listing options={basicstyle=\ttfamily\footnotesize}]
+$ pipeline status
+wd/syn001_ti_12w pipeline status:
+    DAG node/step: 2, Slurm ID: 24170104, Job Name: 02destar_syn001_ti_12w, State: RUNNING, Time limit: 01:00:00, Elapsed: 0:10, max-node042
+    DAG node/step: 3, Slurm ID: 24170107, Job Name: 06computeExtinction_syn001_ti_12w, State: PENDING
+wd/syn002_mg_4w pipeline status:
+    DAG node/step: 1, Slurm ID: 24170102, Job Name: 01createZarrStructure_syn002_mg_4w, State: RUNNING, Time limit: 01:00:00, Elapsed: 0:10, max-node017
+    DAG node/step: 2, Slurm ID: 24170105, Job Name: 02destar_syn002_mg_4w, State: PENDING
+    DAG node/step: 3, Slurm ID: 24170108, Job Name: 06computeExtinction_syn002_mg_4w, State: PENDING
+wd/syn003_peek_8w pipeline status:
+    DAG node/step: 1, Slurm ID: 24170103, Job Name: 01createZarrStructure_syn003_peek_8w, State: FAILED
+    DAG node/step: 2, Slurm ID: 24170106, Job Name: 02destar_syn003_peek_8w, State: PENDING
+
+$ pipeline retire -p syn003
+wd/syn003_peek_8w pipeline retire:
+    Node: 1, Job ID: 3f4198cce6ac4ba3a9d0d505b28a4cd5, Slurm ID: 24170103, Job Name: 01createZarrStructure_syn003_peek_8w, State: FAILED -> Marked as retired
+
+$ pipeline cancel --dry-run -p syn002
+$ pipeline cancel --job 24170105 24170106
+$ pipeline log 24170104 --stderr
+$ pipeline -w wd_test status --show-completed --show-retired
+\end{terminal}
+
+\subsection{Other laupy tools}
+
+\begin{description}[style=nextline,leftmargin=1.5em]
+  \item[\cmd{listnodes}] Lists Maxwell nodes by category: \cmd{-i} idle only, \cmd{-g} GPU,
+    \cmd{-s} strong, \cmd{-w} weak, \cmd{-e} A100, \cmd{-p} partition. These are the categories
+    behind \cmd{submitslurm -g/-s/-e/-x}.
+
+    \cmd{listnodes -{}-topology} (\cmd{-t}) describes the cluster instead: nodes per GPU type (split
+    by GPUs per node, e.g.\ GA100 nodes with 4 and with 1 GPU) and per CPU type (for nodes without GPU), the node classes, and how many of them are up right now.
+    With \cmd{-{}-feature-provider slurm} it compares the node table with SLURM: nodes missing in
+    the table, table nodes SLURM no longer has, and nodes whose hardware differs.
+
+    \textbf{Node hardware.} SLURM knows the hardware of every node as node features (e.g.\
+    \cmd{EPYC, 7543, GPU, GPUx1, A100}), but querying them (\cmd{sinfo} with \cmd{\%f} over all
+    nodes) takes seconds, while asking only for the node states takes a fraction of a second.
+    Therefore the hardware normally comes from a node table in the \cmd{maxwell.tsv} format, and
+    \cmd{-{}-feature-provider} chooses:
+    \begin{description}[style=nextline,leftmargin=1.5em,itemsep=2pt]
+      \item[\cmd{app-managed-list} (default)] The node table \cmd{\textasciitilde/.laupy/maxwell.tsv}
+        (\cmd{\$LAUPY\_MAXWELL\_TSV} overrides the path), managed by laupy: when it is missing it is
+        unpacked from \cmd{laupy/maxwell.tsv.gz} of the installation and at once updated from a
+        SLURM feature query (the packaged table fills what SLURM does not say; if SLURM cannot be
+        reached, the next call tries again), or, without the package file, created from a SLURM
+        feature query; when it is older than a week it is refreshed from SLURM on the
+        next call (that one call takes a few seconds). SLURM is otherwise only asked for the node
+        states. \cmd{listnodes -{}-update-default-list} refreshes it at once.
+      \item[\cmd{list}] The node table as it is (\cmd{-{}-list FILE} or the managed one), never
+        refreshed; SLURM only for the node states.
+      \item[\cmd{slurm}] The SLURM node features on every call, completed from the node table if
+        there is one. Slower, but always current; needed for the comparison in the report.
+    \end{description}
+    When a table is refreshed or exported, SLURM values win; the old table fills what SLURM does not
+    say (FLOPS, warranty, the hardware of nodes without features) and resolves ambiguous features
+    (\cmd{RTX6000} is used for RTX A6000 and RTX PRO cards); table nodes SLURM does not report (e.g.\
+    display nodes) are kept, to be curated by hand. \cmd{-{}-list FILE} uses that table as it is
+    instead of the managed one; \cmd{-{}-no-list} uses no table at all (hardware from SLURM only,
+    implies \cmd{slurm}); \cmd{-{}-offline} does not query SLURM and describes the table alone. If
+    \cmd{sinfo} fails, the table is used without states and the report says so.
+    \cmd{-{}-update-list FILE} refreshes any table file the same way (created if missing);
+    \cmd{-{}-export-topology FILE} writes the combined data of the current sources to \cmd{FILE}.
+
+    The report is limited to \cmd{-p} (default \cmd{allcpu,allgpu}; \cmd{-p ''} for all
+    partitions; any partition works, e.g.\ \cmd{listnodes -t -p com}). \cmd{-v} adds one line per
+    node with state, class, memory, CPU, GPUs and partitions.
+    Besides excellent, strong and weak, the class table shows \emph{default} (hardware in
+    \cmd{GPU\_ALL}/\cmd{CPU\_ALL} but in none of the three classes, e.g.\ RTX A6000 or RTX 2080) and
+    \emph{unclassified} (hardware not in \cmd{GPU\_ALL}/\cmd{CPU\_ALL}, shown with its name, e.g.\ a
+    new GPU model). Neither is selected by \cmd{-e}/\cmd{-s} nor excluded by \cmd{-x}. \cmd{submitslurm -g/-e/-s/-x} and the plain \cmd{listnodes} lists use the same source: at
+    most one \cmd{sinfo} call per command; it is cached, so
+    several lookups in one command never query twice. The source options work for the plain
+    \cmd{listnodes} lists too; with \cmd{-v}, \cmd{-t} and \cmd{-W} end with the time each SLURM
+    query took. Notes about the managed table (installed, refreshed) go to standard error.
+
+    \cmd{listnodes -{}-workload} (\cmd{-W}) prints the same report with an \emph{Idle} column and
+    adds the state of the queue: running jobs, nodes and users; pending jobs (array tasks
+    counted) by reason and by partition; the share of idle CPUs; the idle nodes grouped by GPU type
+    or class; nodes that are partly used but still have idle CPUs; and your own jobs (running jobs,
+    nodes, pending jobs), in green on a terminal (unless \cmd{NO\_COLOR} is set). With \cmd{-v} it adds a table
+    of users (running jobs, nodes, pending jobs) and, in the per-node table, who runs on each node;
+    your row and your nodes (marked \cmd{>}) are highlighted.
+    Running jobs are counted on the selected nodes whatever partition they were submitted to;
+    pending jobs are those submitted to the selected partitions.
+  \item[\cmd{kct-list}] Lists running processes whose name matches \cmd{-{}-pattern} (default
+    \cmd{kct-}), with command line and working directory. Useful on a node to see what a job
+    is doing.
+  \item[\cmd{GPU}] Shares the GPUs of a node between the processes of a job through a Redis server
+    (see \cmd{REDIS}); section~\ref{sec:gpuworkflow} shows how the recipes use it. In short:
+\begin{lstlisting}
+GPUCOUNT=$(GPU --subscribe --try-start-server --redis-manage-all)   # start of the sbatch
+ID=$(GPU --pid $$ --get-with-platform)   # e.g. 1:3 = OpenCL platform 1, device 3
+...                                      # run with -p $ID
+GPU --pid $$ --release ${ID#*:}          # release the device
+GPU --unsubscribe --try-stop-server      # end of the sbatch
+\end{lstlisting}
+    \begin{description}[style=nextline,leftmargin=1.5em,itemsep=2pt]
+      \item[Setting up] \cmd{-{}-redis-manage-all} (or \cmd{-{}-redis-manage 1,2,5},
+        \cmd{-{}-redis-manage-count N}) creates the pool; with \cmd{-{}-try-start-server} the server is
+        started first unless a responsive Redis is on the port. An existing pool is joined as it is,
+        whatever GPUs it was set up with (its GPU count is printed); joining is refused if it
+        manages no GPUs, another OpenCL platform, or has no platform record. \cmd{-{}-force}
+        replaces the pool, which is refused while running processes hold GPUs.
+      \item[Subscribers] With \cmd{-{}-subscribe}, the process given by \cmd{-{}-pid} (default: the
+        calling process, e.g.\ the sbatch script) is registered as a user of the pool.
+        \cmd{-{}-unsubscribe} removes it again; with \cmd{-{}-try-stop-server} the Redis server is
+        stopped if no subscriber is running any more. So several reconstructions on one node can
+        share the GPUs: each subscribes at its start and unsubscribes at its end, and the server lives
+        until the last of them is done. Subscribers that ended without unsubscribing are dropped;
+        \cmd{-{}-info} lists the subscribers, \cmd{-{}-log} shows subscribing and unsubscribing.
+      \item[Getting a card] \cmd{-{}-get} waits for an idle GPU and prints its device ID;
+        \cmd{-{}-get-with-platform} prints \cmd{PLATFORM:DEVICE} instead, with the OpenCL platform
+        of the pool, the form the \cmd{kct-} programs take with \cmd{-p}. Waiting processes are served
+        in the order they started waiting. \cmd{-{}-release DEVICE} returns the card.
+      \item[Holders] The holder of a GPU is the process given by \cmd{-{}-pid} (default: the calling
+        process); pass the long-running process that uses the GPU. It is recorded with its start
+        time, so a reused PID does not count. If the holder ends without \cmd{-{}-release}, its GPU
+        returns to the pool: every waiting \cmd{-{}-get} checks every 3 minutes, and
+        \cmd{-{}-redis-purge} does it at once. Processes of other users count as running. A release
+        by a process other than the holder is allowed but logged with a warning.
+      \item[Output] Results (counts, IDs) go to stdout, everything else to stderr, so
+        \cmd{\$(GPU \ldots)} captures only the result; errors exit with code 1.
+      \item[Information] \cmd{-{}-info}, \cmd{-{}-active}, \cmd{-{}-idle}, \cmd{-{}-managed},
+        \cmd{-{}-log}, \cmd{-{}-platform-list}. \cmd{-{}-redis-delete} removes the pool (refused while
+        GPUs are in use, unless \cmd{-{}-force}).
+    \end{description}
+  \item[\cmd{REDIS}] Starts and stops the Redis server of the GPU pool: \cmd{start}, \cmd{stop},
+    \cmd{restart}, \cmd{shutdown}, \cmd{status} (the same code as \cmd{GPU -{}-try-start-server},
+    module \cmd{laupy.redis\_server}). The server is identified by its PID file
+    \cmd{/tmp/laupy-gpu-<uid>-<SLURM job or local>-<port>.pid}; it logs to a timestamped file in
+    \cmd{-{}-log-dir} (default \cmd{./log}; \cmd{-{}-no-log} for none). \cmd{start -{}-dry-run} only
+    shows the configuration and the files a start would create. Persistence is off and the database
+    file name is timestamped, so no old state is loaded: an RDB file left by a newer Redis cannot stop
+    an older \cmd{redis-server} from starting after a conda update.
+    \cmd{start} uses a responsive Redis already on the port, whoever started it. A port held by your
+    own \cmd{redis-server} that does not respond is freed only with
+    \cmd{-{}-kill-unresponsive-server} (SIGTERM, then SIGKILL); a port held by anything else is
+    refused. \cmd{stop} shuts down the server of its PID file (\cmd{SHUTDOWN NOSAVE}); for a server
+    that does not respond it says so, and \cmd{stop -{}-force} terminates your own
+    \cmd{redis-server} on the port. \cmd{-{}-dump} first saves the data to a timestamped RDB file in
+    \cmd{-{}-log-dir} (diagnostics). \cmd{status} reports the port, the server, the PID file and the
+    log. Note: a server started inside a SLURM job ends with that job.
+\end{description}
+
+% ======================================================================
+\section{Typical workflow}
+% ======================================================================
+
+\subsection{A beamtime from start to finish}
+
+\begin{enumerate}
+  \item \textbf{Find the beamtime.} \menu{Beamtime $\rightarrow$ List Beamtimes\ldots}, \ui{Scan},
+    then tick \ui{Listed}.
+  \item \textbf{Create the project.} \menu{<beamtime> $\rightarrow$ New project from recipe\ldots},
+    for example with \cmd{microct\_root}.
+  \item \textbf{Create the working directory.} \menu{Project $\rightarrow$ Create wd}, then select
+    the samples. For a quick test, create \cmd{wd\_test} with one or two samples.
+  \item \textbf{Run the pipeline.} The \cmd{INFO} file opens in the \ui{Pipeline} tab. Run it line
+    by line with \key{Ctrl+Return}. Every step is submitted right away, and SLURM dependencies start
+    each one when the previous one is done:
+\begin{lstlisting}
+submitslurm --pipeline-step "warmup" 01scanTimingDiagnostics.sbatch
+submitslurm --pipeline-step 1 -a "--compression htj2k --zip --clevel 0 --output-prefix h2k_ll" 01createZarrStructure.sbatch
+submitslurm --pipeline-step 2 -a "--zar-input-file h2k_ll.zar --suffix _ll_clean" 02destar.sbatch
+submitslurm --pipeline-step 3 -a "--img img_ll_clean.den --ref ref_ll_clean.den --dar dar_ll_clean.den --remove-input-files" 03darkFieldCorrect.sbatch
+...
+submitslurm --pipeline-step 9 -s -g -a "--binning 2 --geometry-info h5 ..." 00reconstructCGLS.sbatch
+\end{lstlisting}
+  \item \textbf{Watch.} Switch to the \ui{Status} tab. Open the logs of running jobs with
+    \ui{Follow}.
+  \item \textbf{Keep results.} Copy final reconstructions to \cmd{processed/}. Remove large
+    intermediates (the recipe's \cmd{00remove.sbatch} steps), since \cmd{scratch\_cc} is
+    temporary.
+  \item \textbf{Share improvements.} If you fixed or improved scripts, backport them to the
+    cookbook (Section~\ref{sec:recipesync}).
+\end{enumerate}
+
+\subsection{Recovering from a failure}
+
+When a job fails, its dependants stay PENDING forever: SLURM cannot satisfy \cmd{afterok}.
+To recover:
+
+\begin{enumerate}
+  \item Read the log: \menu{StdErr} in the Status tab, or \cmd{pipeline log <slurmid> -{}-stderr}.
+  \item Cancel the dependants that will never run:
+    \cmd{pipeline cancel -p <sample> -{}-step 2 3 \ldots}, or tick them in
+    \menu{Jobs $\rightarrow$ Cancel jobs in <wd>\ldots}.
+  \item Fix the cause (script arguments, memory, time limit, node type).
+  \item Resubmit. Either use \menu{Resubmit Job} on the failed entry, or rerun the
+    \cmd{submitslurm} lines of the failed step and every later step with \cmd{-p <sample>}.
+    Failed and cancelled entries of the same command are retired automatically
+    (\cmd{-{}-retire-range cmd}).
+  \item Retire anything left over: \cmd{pipeline retire} or
+    \menu{Jobs $\rightarrow$ Retire jobs in <wd>\ldots}.
+\end{enumerate}
+
+\begin{note}[Why a submission is refused]
+\emph{Dependency job \ldots{} has failed with status FAILED} means that a non-retired ancestor of the
+node failed. Retire or resubmit it first. Retiring removes it from the dependencies, so the new job
+starts without waiting for it.
+\end{note}
+
+\subsection{Re-running a step with different parameters}
+
+Submitting a step with a different \cmd{-a} is a different command, so earlier entries are not
+skipped or retired automatically. To replace a step that is still queued:
+
+\begin{terminal}
+submitslurm --pipeline-step 8 --cancel-range step --cancel-state PENDING RUNNING \
+            --retire-range step -f allgpu -a "--binning 2 --pad-symm ..." 09filterFBP.sbatch
+\end{terminal}
+
+\begin{warning}[Range \cmd{step}]
+\cmd{-{}-cancel-range step} and \cmd{-{}-retire-range step} act on \emph{every} script of the step.
+In \cmd{microct\_root}, step 8 also contains \cmd{00remove.sbatch}, which this command would cancel
+too. Give such scripts their own step number, or cancel the old job selectively with
+\cmd{pipeline cancel -{}-job <slurmid>} first.
+\end{warning}
+
+To start a processing unit from scratch, delete its outputs and run
+\cmd{pipeline clean -p <sample>}. This forgets the job history; the logs are kept.
+
+\subsection{GPUs in reconstruction recipes}\label{sec:gpuworkflow}
+
+The GPU reconstructions (\cmd{00reconstructCGLS.sbatch} running \cmd{reconstructSlice2D}, and
+\cmd{reconstructSlab2D}, \cmd{reconstructSlice3D}) share the GPUs of a node through a small Redis
+server. Four parts work together:
+\begin{description}[style=nextline,leftmargin=1.5em,itemsep=2pt]
+  \item[\cmd{REDIS}] starts and stops the server (module \cmd{laupy.redis\_server}).
+  \item[\cmd{GPU}] keeps the pool of GPUs in it: who subscribed, which card is idle, who holds which.
+  \item[The sbatch script] is a \emph{subscriber}: it makes sure server and pool exist at its start
+    and leaves at its end.
+  \item[The reconstruction scripts] are \emph{holders}: each takes a card, runs on it and releases it.
+\end{description}
+
+\paragraph{Start and end of the sbatch.}
+\begin{lstlisting}
+if ! GPUCOUNT=$(GPU --subscribe --try-start-server --redis-manage-all); then
+	echo "No GPU pool to run reconstruction!" >&2
+	exit 1
+fi
+PROCCOUNT=$( calc "2*$GPUCOUNT" )
+...                                   # the reconstructions run here
+GPU --unsubscribe --try-stop-server
+\end{lstlisting}
+The first line starts Redis unless a responsive one is already on the port
+(\cmd{-{}-try-start-server}), creates the pool with all GPUs of the default OpenCL platform or joins
+the pool that is already there as it is (\cmd{-{}-redis-manage-all}), and registers the sbatch script
+(\cmd{-{}-subscribe}). The command
+prints the number of GPUs in the pool and nothing else on stdout, so \cmd{GPUCOUNT} gets exactly
+that. It fails (exit code 1) if the existing pool cannot be used: no GPUs, another platform. At the
+end, \cmd{-{}-unsubscribe} removes the subscription, and \cmd{-{}-try-stop-server} stops the server
+if no other subscriber is still running.
+
+\paragraph{Getting a card in a reconstruction script.}
+The scripts' \cmd{prg\_async} does:
+\begin{lstlisting}
+ID=$(GPU --pid "$$" --get-with-platform)   # waits until a card is idle; e.g. 1:3
+DEV="${ID#*:}"
+...                                        # kct-... -p $ID
+GPU --pid "$$" --release "$DEV"            # once, whether the reconstruction succeeded or not
+\end{lstlisting}
+The platform comes from the pool together with the card, so the two always match. A platform
+given explicitly (the scripts' \cmd{-p}, or \cmd{PLATFORM} in \cmd{params}) is used instead; then
+only the card is taken, with \cmd{GPU -{}-get}.
+\cmd{-{}-pid "\$\$"} names the script itself as the holder. The holder must live as long as the
+card is used: if it ends without releasing, the card goes back to the pool (a waiting \cmd{-{}-get}
+checks every 3~minutes), so a short-lived process such as a subshell must not be the holder.
+
+\paragraph{Several reconstructions on one node.}
+Start several sbatch scripts on the same node (e.g.\ in one allocation or with
+\cmd{-{}-oversubscribe}). The first one starts the server and creates the pool, the others join it;
+their reconstructions get the cards in turn and never more than there are. The server keeps
+running until the last of them unsubscribes. \cmd{GPU -{}-info} lists the subscribers.
+
+\paragraph{Starting and stopping Redis by hand.}
+Outside a recipe, e.g.\ on a node you work on interactively:
+\begin{lstlisting}
+REDIS start --dry-run        # what would be started, which files are written
+REDIS start                  # or: GPU --subscribe --try-start-server --redis-manage-all --pid $$
+GPU --redis-manage-all       # create the pool (not needed after GPU --subscribe ...)
+REDIS status
+REDIS stop                   # or: GPU --unsubscribe --try-stop-server --pid $$
+\end{lstlisting}
+Subscribing with \cmd{-{}-pid \$\$} from a login shell keeps the pool alive while that shell runs,
+so reconstructions started from it can join and leave. A server started inside a SLURM job ends
+when the job ends, whoever still uses it.
+
+\paragraph{Looking at the pool.}
+\cmd{GPU -{}-info} (platform, GPUs, subscribers), \cmd{-{}-active} (which card is held by which
+process, and whether it still runs), \cmd{-{}-idle}, \cmd{-{}-log} (every get, release, purge,
+subscription). \cmd{GPU -{}-redis-purge} returns the cards of holders that ended without releasing
+at once.
+
+\subsection{Troubleshooting}
+
+\begin{longtable}{@{}>{\raggedright}p{0.36\linewidth}>{\raggedright\arraybackslash}p{0.6\linewidth}@{}}
+\toprule
+Symptom & Remedy \\
+\midrule
+\endhead
+\emph{No subdirectories of wd found} & Wrong root directory or \cmd{-w}. Run from the project directory or pass \cmd{-d}. \\
+\emph{SLURM script directory sbatch does not exist} & Same, or the recipe link is broken. Check \cmd{ls -l sbatch}. \\
+\emph{skipped, same command already queued or running} & Intended. Use \cmd{-{}-skip-range none} to force, or cancel the old job. \\
+Job stays PENDING with reason \emph{DependencyNeverSatisfied} & An ancestor failed. See the recovery steps above. \\
+\cmd{command not found} inside a job & The job inherits the PATH of \cmd{submitslurm}. Check with \cmd{-{}-verbose}, and fix it in the shell or the browser's PATH editor. \\
+\cmd{GPU -{}-get} waits a long time & All cards are held: \cmd{GPU -{}-active} shows by whom. Cards of holders that ended without releasing come back within 3 minutes, or at once with \cmd{GPU -{}-redis-purge}. \\
+\emph{Can not connect to Redis server} & No server runs on the port: start it with \cmd{GPU -{}-subscribe -{}-try-start-server -{}-redis-manage-all} or \cmd{REDIS start}; \cmd{REDIS status} shows what holds the port. \\
+\emph{The existing GPU pool manages no GPUs} & Someone set up the pool without cards (or removed them); see \cmd{GPU -{}-info}, replace it with \cmd{GPU -{}-redis-manage-all -{}-force}. \\
+Browser window too large & Start with \cmd{-{}-qt-scale-factor 1}. \\
+Old laupy cannot read entries & Upgrade laupy (field rename in 1.2.5). \\
+\bottomrule
+\end{longtable}
+
+\appendix
+
+% ======================================================================
+\section{Fields of a pipeline entry}\label{app:fields}
+% ======================================================================
+
+\begin{longtable}{@{}>{\raggedright}p{0.3\linewidth}>{\raggedright\arraybackslash}p{0.66\linewidth}@{}}
+\toprule
+Field & Meaning \\
+\midrule
+\endhead
+\cmd{job\_id} & Unique entry ID (UUID) used by laupy. \\
+\cmd{slurm\_id} & SLURM job ID. \\
+\cmd{script\_name}, \cmd{job\_name} & Script and SLURM job name. \\
+\cmd{dag\_node\_name}, \cmd{step} & DAG node; \cmd{step} is the number, or $-2$ for named nodes. \\
+\cmd{dag\_node\_deps} & Explicit parents of a named node. \\
+\cmd{dependency\_slurm\_ids} & SLURM jobs this job waited for (\cmd{afterok}). \\
+\cmd{command}, \cmd{slurm\_command} & Script command and full \cmd{sbatch} command (used for resubmission). \\
+\cmd{laupy\_python} & Python environment of the job (\cmd{LAUPY\_PYTHON}); absent for the default one. \\
+\cmd{processing\_unit\_subdir}, \cmd{processing\_unit\_name} & Absolute path and name of the processing unit. \\
+\cmd{timestamp} & Submission time (Unix time). \\
+\cmd{slurm\_info} & Last known SLURM data: State, JobName, Elapsed, NodeList, StdOut, StdErr, \ldots \\
+\cmd{retired}, \cmd{retired\_reason}, \cmd{retired\_by}, \cmd{retire\_timestamp} & Retirement flag, reason, the entry or user that retired it, and when. \\
+\bottomrule
+\end{longtable}
+
+\end{document}

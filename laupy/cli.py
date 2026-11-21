@@ -143,6 +143,33 @@ def parse_env_assignment(value: str):
     return name, val
 
 
+LAUPY_PYTHON = "LAUPY_PYTHON"
+
+
+def check_python_environment(value: str) -> str:
+    """Absolute path of a Conda/Mamba environment (a directory with bin/python) for LAUPY_PYTHON.
+
+    Raises ValueError with the reason if the path is not usable.
+    """
+    path = os.path.abspath(os.path.expanduser(value))
+    if "," in path:
+        # sbatch --export separates variables by commas
+        raise ValueError(f"path must not contain a comma (sbatch --export uses commas as separator): {path}")
+    if not os.path.isdir(path):
+        raise ValueError(f"not a directory: {path}")
+    if not os.access(os.path.join(path, "bin", "python"), os.X_OK):
+        raise ValueError(f"no executable bin/python in {path}")
+    return path
+
+
+def parse_python_environment(value: str) -> str:
+    """argparse type for submitslurm --python PATH."""
+    try:
+        return check_python_environment(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e))
+
+
 @dataclass
 class SubmissionEnvironment:
     """Environment of submitted jobs, in two layers.

@@ -1,0 +1,1006 @@
+% API reference for the laupy Python package.
+% Compile with:  tectonic laupy_api_reference.tex
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{listings}
+\usepackage{booktabs,tabularx,longtable,array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{accent}{HTML}{1F5A96}
+\definecolor{termbg}{HTML}{F4F6F8}
+\definecolor{termframe}{HTML}{B8C2CC}
+\definecolor{notebg}{HTML}{EAF2FB}
+\definecolor{warnbg}{HTML}{FDF1E4}
+\definecolor{warnframe}{HTML}{D9822B}
+\definecolor{sigbg}{HTML}{E8EEF5}
+\definecolor{kw}{HTML}{1F5A96}
+\definecolor{cm}{HTML}{6A737D}
+\definecolor{st}{HTML}{8A3B12}
+
+\hypersetup{colorlinks=true,linkcolor=accent,urlcolor=accent}
+\setlist{itemsep=2pt,topsep=4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{3em}
+
+\titleformat{\section}{\Large\bfseries\sffamily\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily}{\thesubsubsection}{0.8em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\sffamily laupy --- API Reference}
+\fancyhead[R]{\small\sffamily\nouppercase{\leftmark}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\lstdefinestyle{py}{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{kw}\bfseries,
+  commentstyle=\color{cm}\itshape,
+  stringstyle=\color{st},
+  breaklines=true,
+  postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  upquote=true,
+}
+\lstset{style=py}
+
+\newtcblisting{code}[1][]{
+  listing only, colback=termbg, colframe=termframe, boxrule=0.4pt, arc=2pt,
+  left=4pt, right=4pt, top=2pt, bottom=2pt, breakable,
+  listing options={style=py}, #1
+}
+\newtcblisting{terminal}[1][]{
+  listing only, colback=termbg, colframe=termframe, boxrule=0.4pt, arc=2pt,
+  left=4pt, right=4pt, top=2pt, bottom=2pt, breakable,
+  listing options={language={},basicstyle=\ttfamily\small,commentstyle={},stringstyle={},keywordstyle={}}, #1
+}
+\newtcolorbox{note}[1][Note]{
+  colback=notebg, colframe=accent, boxrule=0.4pt, arc=2pt, breakable,
+  fonttitle=\bfseries\sffamily\small, title={#1}, left=5pt, right=5pt
+}
+\newtcolorbox{warning}[1][Caution]{
+  colback=warnbg, colframe=warnframe, boxrule=0.4pt, arc=2pt, breakable,
+  fonttitle=\bfseries\sffamily\small, title={#1}, left=5pt, right=5pt
+}
+
+% API entry: signature box followed by the description
+\newcommand{\api}[1]{%
+  \par\medskip
+  \begin{tcolorbox}[colback=sigbg, colframe=sigbg, boxrule=0pt, arc=1pt, left=4pt, right=4pt, top=2pt, bottom=2pt, breakable]
+  \raggedright\ttfamily\small #1
+  \end{tcolorbox}\nopagebreak\vspace{-4pt}%
+}
+% Allow line breaks after underscores and dots in long identifiers
+\DeclareRobustCommand{\_}{\textunderscore\allowbreak}
+\newcommand{\cmd}[1]{\texttt{#1}}
+\newcommand{\args}{\par\textsf{\small\bfseries Arguments}\par}
+\newcommand{\returns}{\par\textsf{\small\bfseries Returns}\quad}
+\newcommand{\raises}{\par\textsf{\small\bfseries Raises}\quad}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\sffamily\Huge\bfseries\color{accent} laupy\par}
+  \vspace{0.6cm}
+  {\sffamily\LARGE API Reference\par}
+  \vspace{1.2cm}
+  {\large Python interface for SLURM pipelines of processing units\par}
+  \vspace{2cm}
+  {\large version 1.2.5\par}
+  \vfill
+  {\small Companion to the \emph{laupy \& lautools-browser User Manual}\par}
+  {\small Licensed under the GNU General Public License v3.0\par}
+  {\small Compiled \today\par}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+% ======================================================================
+\section{Introduction}
+% ======================================================================
+
+laupy submits SLURM batch scripts for many \emph{processing units} (one sample each) and
+records each submitted job as an \emph{entry} in the processing unit's
+\cmd{pipeline/dag.json}. The command line tools \cmd{submitslurm} and \cmd{pipeline} and
+lautools-browser are built on the API described here; your own scripts can use the same API.
+
+\subsection{Modules}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Module & Purpose \\
+\midrule
+\cmd{laupy.pipeline\_entries} & Lifecycle of entries after submission: \cmd{PipelineEntriesStore} (load many processing units, one batched SLURM refresh, merging save), selection, retire, cancel. \textbf{Start here.} \\
+\cmd{laupy.flow} & Files and scheduling: load/store \cmd{dag.json}, list processing units, refresh entries, build the DAG, submit and resubmit jobs. \\
+\cmd{laupy.slurm} & Thin, batched wrappers around \cmd{sacct}, \cmd{squeue}, \cmd{sbatch}, \cmd{scancel}; job state constants. \\
+\cmd{laupy.cli} & Helpers shared by the command line tools: common options, directory tree resolution, job environment. \\
+\cmd{laupy.graph\_utils} & Minimal directed graph with ancestors, cycle detection and topological sort. \\
+\cmd{laupy.maxwell} & Maxwell node categories (GPU/CPU, excellent/strong/weak) from a node table and \cmd{sinfo}; cluster topology report. \\
+\cmd{laupy.redis\_server} & Lifecycle of the temporary Redis server of the GPU pool: start, stop, status (used by \cmd{REDIS} and \cmd{GPU -{}-try-start-server}). \\
+\cmd{laupy.util} & Process listing used by \cmd{kct-list}. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Data model}
+
+\begin{terminal}
+<project root>/                       working directory of sbatch
+|-- sbatch/                           SLURM scripts
+`-- wd/                               working directory
+    `-- <processing unit subdir>/     one sample
+        `-- pipeline/
+            |-- dag.json              PIPELINE_ENTRIES: JSON list of entries
+            |-- exec.sh               commands submitted (written by submitslurm)
+            `-- log/                  <script>-<node>-<slurmid>.out/.err
+\end{terminal}
+
+\begin{description}[style=nextline,leftmargin=1.5em]
+  \item[\cmd{PIPELINE\_ENTRIES}] The list of entry dicts of \emph{one} processing unit, as stored
+    in \cmd{dag.json}. Functions take it as their first argument and change it \emph{in place}.
+    The upper-case name is a convention throughout laupy.
+  \item[Entry] One submitted SLURM job, a \cmd{dict}; fields in Section~\ref{sec:fields}. It is
+    identified by \cmd{job\_id}, a 32-character hex UUID assigned by laupy, and carries the
+    \cmd{slurm\_id} returned by \cmd{sbatch}.
+  \item[DAG node] Every entry belongs to a node \cmd{dag\_node\_name}. Numeric nodes
+    \cmd{"0"}, \cmd{"1"}, \ldots{} form a chain; named nodes depend on the nodes in
+    \cmd{dag\_node\_deps}, or on the root when that list is empty; node \cmd{"-1"} is outside the
+    DAG (Section~\ref{sec:dag}).
+  \item[\cmd{slurm\_info}] The last known SLURM data of an entry: \cmd{State}, \cmd{JobName},
+    \cmd{Elapsed}, \cmd{NodeList}, \cmd{StdOut}, \ldots{} (Section~\ref{sec:slurminfo}). It is
+    updated by a \emph{refresh}; once the state is final (\cmd{TERMINAL\_STATES}), it is not
+    queried again by default.
+  \item[Retired] \cmd{entry["retired"] = True}: kept for history, ignored by scheduling, status and
+    dependency resolution.
+\end{description}
+
+\subsection{The load $\rightarrow$ modify $\rightarrow$ store pattern}
+
+All changes follow the same pattern: load the entries, refresh them from SLURM if states matter,
+change the lists in place, store them.
+
+\begin{code}
+from laupy.pipeline_entries import PipelineEntriesStore
+
+store = PipelineEntriesStore(subdirs)  # load_pipeline_entries() of every subdir
+store.refresh()                        # one batched sacct/squeue query for all of them
+for subdir, PIPELINE_ENTRIES in store.items():
+    ...                                # read or change PIPELINE_ENTRIES in place
+store.store()                          # write the changed subdirs, merged with the file on disk
+\end{code}
+
+For a single processing unit the same works with the functions of \cmd{laupy.flow}:
+\cmd{load\_pipeline\_entries()}, \cmd{update\_pipeline\_entries()},
+\cmd{store\_pipeline\_entries()}.
+
+\begin{note}[Concurrent processes]
+\cmd{dag.json} is replaced atomically, so readers never see a half-written file.
+\cmd{PipelineEntriesStore.store()} also \emph{merges}: it re-reads the file, applies only the fields
+you changed and appends your new entries, so entries appended meanwhile by another process (e.g.\
+\cmd{submitslurm} while the browser refreshes) are kept. If two processes change the same field of
+the same entry, the last write wins. \cmd{store\_pipeline\_entries()} does \emph{not} merge; it
+overwrites the file with the list you pass.
+\end{note}
+
+% ======================================================================
+\section{Examples}
+% ======================================================================
+
+All examples run in the project root and were tested with laupy 1.2.5.
+
+\subsection{Status of all processing units}
+
+\begin{code}
+from laupy.flow import list_processing_unit_subdirs
+from laupy.pipeline_entries import PipelineEntriesStore, entry_slurm_id
+
+subdirs = list_processing_unit_subdirs("wd", require_pipeline=True)
+store = PipelineEntriesStore(subdirs, topological_sort=True)
+queried = store.refresh()              # one batched sacct/squeue call for all subdirs
+for subdir, PIPELINE_ENTRIES in store.items():
+    for entry in PIPELINE_ENTRIES:
+        if entry.get("retired"):
+            continue
+        state = entry.get("slurm_info", {}).get("State", "UNKNOWN")
+        print(entry["processing_unit_name"], entry["dag_node_name"], entry_slurm_id(entry), state)
+store.store()                          # caches final states, writes only changed subdirs
+print("queried", queried, "entries")
+\end{code}
+
+\begin{terminal}
+syn001_ti_12w 1 24170101 COMPLETED
+syn001_ti_12w 2 24170104 RUNNING
+syn002_mg_4w 1 24170102 RUNNING
+syn002_mg_4w 2 24170105 PENDING
+syn003_peek_8w 1 24170103 FAILED
+syn003_peek_8w 2 24170106 PENDING
+queried 6 entries
+\end{terminal}
+
+\subsection{Retire failed entries and cancel chosen jobs}
+
+\begin{code}
+from laupy.flow import list_processing_unit_subdirs
+from laupy.pipeline_entries import (PipelineEntriesStore, RETIRABLE_STATES, CANCELLABLE_STATES,
+                                    select_pipeline_entries, retire_pipeline_entries, cancel_selected)
+
+store = PipelineEntriesStore(list_processing_unit_subdirs("wd", require_pipeline=True))
+store.refresh()
+# Retire the failed entries of step 1
+for subdir, PIPELINE_ENTRIES in store.items():
+    failed = select_pipeline_entries(PIPELINE_ENTRIES, RETIRABLE_STATES, steps=[1])
+    for entry in retire_pipeline_entries(PIPELINE_ENTRIES, [e["job_id"] for e in failed],
+                                         reason="bad input data"):
+        print("retired", entry["slurm_id"])
+store.store()
+
+# Cancel two jobs given by SLURM ID, wherever they are
+chosen = select_pipeline_entries(store.all_entries(), CANCELLABLE_STATES,
+                                 job_ids=["24170102", "24170105"])
+for subdir, results in cancel_selected(chosen).items():
+    for r in results:
+        print(r["slurm_id"], r["state"], "->", r["error"] or "cancelled")
+\end{code}
+
+\begin{terminal}
+retired 24170103
+24170102 RUNNING -> cancelled
+24170105 PENDING -> cancelled
+\end{terminal}
+
+\subsection{Submitting jobs}
+
+\cmd{submitslurm} is the reference for submissions; this is its core, reduced to one node:
+
+\begin{code}
+import os
+from laupy.cli import SubmissionEnvironment
+from laupy.flow import list_processing_unit_subdirs, SchedulingError, schedule_slurm_job
+from laupy.pipeline_entries import PipelineEntriesStore
+
+root = os.getcwd()                                   # project root with sbatch/ and wd/
+store = PipelineEntriesStore(list_processing_unit_subdirs("wd"))
+store.refresh(limit_to_ancestors_including_node="1") # states of node 1 and its ancestors
+env = SubmissionEnvironment(extra={"OMP_NUM_THREADS": "8"})
+
+for subdir in store.subdirs():
+    name = os.path.basename(subdir)
+    script = "01createZarrStructure.sbatch"
+    job_name = f"01createZarrStructure_{name}"
+    log_dir = os.path.join(subdir, "pipeline", "log")
+    os.makedirs(log_dir, exist_ok=True)
+    cmd = [os.path.join(root, "sbatch", script), subdir, "--compression", "htj2k"]
+    slurm_cmd = ["sbatch", "--partition=allcpu,allgpu", f"--job-name={job_name}",
+                 env.export_option(env.job_vars(script, job_name)),
+                 f"--output={log_dir}/01createZarrStructure-%N-%j.out",
+                 f"--error={log_dir}/01createZarrStructure-%N-%j.err"] + cmd
+    PIPELINE_ENTRIES = store[subdir]
+    try:
+        entry = schedule_slurm_job(PIPELINE_ENTRIES, "1", script, job_name, subdir,
+                                   slurm_cmd, cmd, env=env.global_env, raise_errors=True)
+    except SchedulingError as e:
+        print(f"{name}: not submitted, {e}")
+        continue
+    PIPELINE_ENTRIES.append(entry)          # schedule_slurm_job does not append
+    print(f"{name}: submitted {entry['slurm_id']}")
+store.store()
+\end{code}
+
+\cmd{schedule\_slurm\_job()} adds \cmd{-{}-dependency=afterok:\ldots} for the unfinished jobs of
+all ancestor nodes. It needs their current states, hence the refresh limited to the node and its
+ancestors before submitting.
+
+\subsection{One processing unit, resubmission and the DAG}
+
+\begin{code}
+from laupy.flow import (load_pipeline_entries, store_pipeline_entries, update_pipeline_entries,
+                        constructDAG, resubmit_slurm_job)
+from laupy.graph_utils import ancestors
+
+PIPELINE_ENTRIES = load_pipeline_entries("wd/syn003_peek_8w")
+update_pipeline_entries(PIPELINE_ENTRIES, update_retired=True)
+print(sorted(ancestors(constructDAG(PIPELINE_ENTRIES), "2")))   # ['0', '1', 'dag_root']
+
+failed = next(e for e in PIPELINE_ENTRIES if e["slurm_id"] == 24170103)
+new_entry = resubmit_slurm_job(PIPELINE_ENTRIES, failed)          # old entry retired: "Resubmitted"
+PIPELINE_ENTRIES.append(new_entry)
+store_pipeline_entries("wd/syn003_peek_8w", PIPELINE_ENTRIES)
+\end{code}
+
+\subsection{Querying SLURM directly}
+
+\begin{code}
+from laupy import slurm
+
+info = slurm.slurm_info([24170101, 24170104])      # list in, list out
+print({i["JobID"]: i["State"] for i in info})       # {'24170101': 'COMPLETED', '24170104': 'RUNNING'}
+print(slurm.QUERY_COUNTS)                           # {'sacct': 1, 'squeue': 1}
+error = slurm.scancel(24170104)                     # None on success
+\end{code}
+
+% ======================================================================
+\section{\texorpdfstring{\cmd{laupy.pipeline\_entries}}{laupy.pipeline\_entries}}
+% ======================================================================
+
+Lifecycle of entries after submission:
+\emph{submitted} $\rightarrow$ \emph{refreshed} $\rightarrow$ \emph{cancelled / finished}
+$\rightarrow$ \emph{retired}.
+Shared by \cmd{pipeline}, \cmd{submitslurm} and lautools-browser.
+
+\subsection{Constants}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Name & Value \\
+\midrule
+\cmd{RETIRABLE\_STATES} & \cmd{FAILED\_STATES}: FAILED, CANCELLED, TIMEOUT. \\
+\cmd{CANCELLABLE\_STATES} & \cmd{ACTIVE\_STATES}: PENDING, RUNNING, REQUEUED, COMPLETING. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Class \texorpdfstring{\cmd{PipelineEntriesStore}}{PipelineEntriesStore}}
+
+\api{PipelineEntriesStore(subdirs=(), topological\_sort=False)}
+The \cmd{PIPELINE\_ENTRIES} of several processing unit subdirs, with one batched SLURM refresh
+and a merging \cmd{store()}. Subdirs are keyed by their resolved absolute path; every method
+accepting a subdir also accepts a relative path or \cmd{Path}.
+\args
+\begin{description}[leftmargin=2em,font=\ttfamily\mdseries]
+  \item[subdirs] Processing unit subdirs to load immediately.
+  \item[topological\_sort] Order each list by the topological order of the DAG nodes, then by
+    submission time (as \cmd{pipeline status} shows them).
+\end{description}
+On loading, each entry gets \cmd{processing\_unit\_subdir} and \cmd{processing\_unit\_name} if
+missing; this alone does not mark the subdir as changed.
+
+\api{load(subdir) -> list}
+(Re)load one subdir from disk, discarding unsaved changes. Returns its list.
+
+\api{subdirs() -> list[str]\quad items() -> Iterator[(str, list)]\quad all\_entries() -> list[dict]}
+The loaded subdirs (absolute paths); pairs of subdir and \cmd{PIPELINE\_ENTRIES}; all entries of
+all subdirs in one flat list. Entries are the stored objects, so changes made through
+\cmd{all\_entries()} are saved by \cmd{store()} too.
+
+\api{entries(subdir) -> list\quad store[subdir]}
+The loaded list of one subdir. Change it in place (including \cmd{append()}), then \cmd{store()}.
+
+\api{find(job\_id) -> dict | None}
+The entry with this laupy \cmd{job\_id} in any subdir.
+
+\api{refresh(subdirs=None, select=None, **selection) -> int}
+Refresh \cmd{slurm\_info} of entries from all (or the given) subdirs with one batched query.
+\args
+\begin{description}[leftmargin=2em,font=\ttfamily\mdseries]
+  \item[subdirs] Limit the refresh to these subdirs.
+  \item[select] \cmd{select(subdir, PIPELINE\_ENTRIES) -> list}: choose the entries to query
+    yourself (e.g.\ by \cmd{job\_id}).
+  \item[**selection] Otherwise the entries are chosen by
+    \cmd{laupy.flow.pipeline\_entries\_to\_refresh(PIPELINE\_ENTRIES, **selection)}, e.g.\
+    \cmd{update\_retired=True}, \cmd{filter\_terminal\_states=False},
+    \cmd{limit\_to\_ancestors\_including\_node="3"}.
+\end{description}
+\returns The number of entries queried.
+
+\api{modified\_subdirs() -> list[str]}
+Subdirs whose entries differ from what was loaded (field changes or new entries).
+
+\api{store(subdirs=None) -> list[str]}
+Write the changed subdirs (all, or only the given ones), merged with the current file on disk:
+fields you changed are applied, new entries are appended, everything else on disk is kept.
+Afterwards the lists hold the merged state. Entries you removed from a list are \emph{not} removed
+from the file; use \cmd{laupy.flow.clean\_pipeline\_entries()} to forget entries.
+\returns The subdirs written.
+\raises \cmd{OSError} when a file cannot be written (e.g.\ read-only project).
+
+\subsection{Functions}
+
+\api{select\_pipeline\_entries(PIPELINE\_ENTRIES, states, job\_ids=None, steps=None) -> list}
+Non-retired entries whose \cmd{slurm\_info["State"]} is in \cmd{states}.
+\args
+\begin{description}[leftmargin=2em,font=\ttfamily\mdseries]
+  \item[PIPELINE\_ENTRIES] Any list of entries, also \cmd{store.all\_entries()}.
+  \item[states] Iterable of state names, e.g.\ \cmd{RETIRABLE\_STATES}.
+  \item[job\_ids] Limit to entries whose laupy \cmd{job\_id} \emph{or} SLURM ID is in this list;
+    both kinds may be mixed, compared as strings.
+  \item[steps] Limit to these step numbers (used only when \cmd{job\_ids} is not given).
+\end{description}
+Refresh first: the selection uses the stored states.
+
+\api{entry\_matches\_id(entry, ids) -> bool}
+True if the entry's \cmd{job\_id} or SLURM ID is in \cmd{ids} (a set of strings).
+
+\api{entry\_slurm\_id(entry)}
+The entry's \cmd{slurm\_id}, or the \cmd{JobID} reported by SLURM if missing.
+
+\api{retire\_pipeline\_entries(PIPELINE\_ENTRIES, job\_ids, reason=None, retired\_by=None) -> list}
+Retire the not yet retired entries with these laupy \cmd{job\_id}s. Sets \cmd{retired},
+\cmd{retire\_timestamp} and, if given, \cmd{retired\_reason} and \cmd{retired\_by} (by convention
+the \cmd{job\_id} of the entry that replaced them). Does not save.
+\returns The entries retired by this call.
+
+\api{cancel\_pipeline\_entries(PIPELINE\_ENTRIES, job\_ids, refresh=True) -> list[dict]}
+\cmd{scancel} the entries with these laupy \cmd{job\_id}s and set their state to CANCELLED. Entries
+are not retired. With \cmd{refresh=True} their states are queried first (one batched query); jobs no
+longer active are reported, not cancelled. Each job is cancelled separately, so the outcome is
+known per job. Does not save.
+\returns One dict per entry: \cmd{entry}, \cmd{slurm\_id}, \cmd{state} (before cancelling),
+\cmd{error} (message or \cmd{None}).
+
+\api{retire\_selected(selection, reason=None) -> dict[str, list]}
+Retire entries chosen elsewhere (e.g.\ in a dialog): the affected subdirs are loaded fresh, changed
+and saved.
+\cmd{selection} is \cmd{\{subdir: [job\_id, \ldots]\}} or a list of entries carrying
+\cmd{processing\_unit\_subdir} (e.g.\ from \cmd{store.all\_entries()}).
+\returns \cmd{\{subdir: retired entries\}}.
+
+\api{cancel\_selected(selection) -> dict[str, list]}
+Cancel chosen entries of any number of subdirs with one SLURM query, then save (including the
+refreshed states). \cmd{selection} as for \cmd{retire\_selected()}.
+\returns \cmd{\{subdir: results of cancel\_pipeline\_entries()\}}.
+
+% ======================================================================
+\section{\texorpdfstring{\cmd{laupy.flow}}{laupy.flow}}
+% ======================================================================
+
+\subsection{Files and directories}
+
+\api{pipeline\_entries\_file(processing\_unit\_subdir) -> str}
+Path of \cmd{<subdir>/pipeline/dag.json}.
+
+\api{load\_pipeline\_entries(processing\_unit\_subdir, topological\_sort=False) -> list}
+The entries of one processing unit; \cmd{[]} if there is no file. Field names written by laupy
+before 1.2.5 (\cmd{execution\_unit\_dir}, \cmd{execution\_unit\_name}) are converted to
+\cmd{processing\_unit\_subdir}, \cmd{processing\_unit\_name}.
+
+\api{store\_pipeline\_entries(processing\_unit\_subdir, PIPELINE\_ENTRIES) -> None}
+Write the list, replacing the file atomically (temporary file and \cmd{os.replace}). Creates
+\cmd{pipeline/} if needed. Overwrites; see \cmd{PipelineEntriesStore.store()} for merging.
+
+\api{sort\_pipeline\_entries\_topologically(PIPELINE\_ENTRIES) -> list}
+A new list ordered by the topological order of the DAG nodes, then by \cmd{timestamp}.
+
+\api{clean\_pipeline\_entries(processing\_unit\_subdir) -> None}
+Forget all entries (empty \cmd{dag.json}); logs are kept. As \cmd{pipeline clean}.
+
+\api{list\_processing\_unit\_subdirs(working\_dir, pattern=None, require\_pipeline=False) -> list[Path]}
+The immediate subdirectories of a working directory, sorted by name.
+\args
+\begin{description}[leftmargin=2em,font=\ttfamily\mdseries]
+  \item[pattern] Case-insensitive substring the name must contain (as \cmd{-p}).
+  \item[require\_pipeline] Only subdirectories that already have \cmd{pipeline/}.
+\end{description}
+
+\api{remove\_pipeline\_dir(pipeline\_dir) -> None}
+Delete the files of \cmd{pipeline/} and \cmd{pipeline/log/} and both directories. Other
+subdirectories of \cmd{pipeline/} are left untouched. As \cmd{pipeline delete}.
+
+\subsection{Refreshing entries}
+
+\api{pipeline\_entries\_to\_refresh(PIPELINE\_ENTRIES, limit\_to\_ancestors\_including\_node="-1", update\_retired=False, update\_negative\_step=False, filter\_terminal\_states=True, node\_dependencies=None) -> list}
+Select the entries whose SLURM state should be queried.
+\args
+\begin{description}[leftmargin=2em,font=\ttfamily\mdseries]
+  \item[limit\_to\_ancestors\_including\_node] Only entries of this node and its ancestors;
+    \cmd{"-1"}: all entries. Ancestors are computed on the full DAG.
+  \item[update\_retired] Include retired entries.
+  \item[update\_negative\_step] Include entries of step $-1$.
+  \item[filter\_terminal\_states] Skip entries whose stored state is final (\cmd{TERMINAL\_STATES}).
+  \item[node\_dependencies] Dependencies of a node not yet in the entries (a new named node), so
+    that its ancestors can be determined before its first submission.
+\end{description}
+
+\api{refresh\_pipeline\_entries(entries) -> None}
+Query SLURM for the given entries, from any number of processing units, in one batched query and
+store the result in their \cmd{slurm\_info}. Entries SLURM no longer knows keep their stored info.
+
+\api{update\_pipeline\_entries(PIPELINE\_ENTRIES, **selection) -> None}
+\cmd{refresh\_pipeline\_entries(pipeline\_entries\_to\_refresh(PIPELINE\_ENTRIES, **selection))}
+for one processing unit. For many units use \cmd{PipelineEntriesStore.refresh()}.
+
+\subsection{The DAG}\label{sec:dag}
+
+\api{constructDAG(PIPELINE\_ENTRIES) -> DirectedGraph}
+The DAG of the nodes referenced by the entries:
+\begin{itemize}
+  \item a root node \cmd{"dag\_root"} with the edge \cmd{dag\_root} $\rightarrow$ \cmd{"0"};
+  \item numeric nodes form a chain \cmd{"0"} $\rightarrow$ \cmd{"1"} $\rightarrow$ \ldots{} up to the
+    largest number used; they cannot have explicit dependencies;
+  \item named nodes get edges from each node in their \cmd{dag\_node\_deps} (unknown dependencies are
+    dropped with a warning), or from \cmd{dag\_root} when the list is empty;
+  \item negative nodes (\cmd{"-1"}) are not part of the graph.
+\end{itemize}
+Entries without \cmd{dag\_node\_name} get it from \cmd{step} (normalised to a string, in place).
+\raises \cmd{ValueError} if the graph contains a cycle.
+
+\api{string\_is\_integer(s) -> bool}
+True if \cmd{int(s)} succeeds.
+
+\subsection{Scheduling}
+
+\api{schedule\_slurm\_job(PIPELINE\_ENTRIES, dag\_node\_or\_step\_name, script\_name, job\_name, processing\_unit\_subdir, slurm\_cmd, cmd, node\_dependencies=None, env=None, raise\_errors=False, laupy\_python=None) -> dict | None}
+Submit one job for a DAG node and return its new entry. The caller appends it to
+\cmd{PIPELINE\_ENTRIES} and stores.
+\args
+\begin{description}[leftmargin=2em,font=\ttfamily\mdseries]
+  \item[dag\_node\_or\_step\_name] \cmd{"3"}, \cmd{"reco"} or \cmd{"-1"} (no dependencies).
+  \item[script\_name, job\_name] Recorded in the entry.
+  \item[processing\_unit\_subdir] Absolute path of the unit; \cmd{sbatch} runs in its
+    grandparent (the project root).
+  \item[slurm\_cmd] Full \cmd{sbatch} argument list, ending with the script command; stored for
+    resubmission.
+  \item[cmd] The script command (script and arguments); stored, space-joined, as \cmd{command}.
+  \item[node\_dependencies] Parents of a named node.
+  \item[env] Environment for \cmd{sbatch} (e.g.\ \cmd{SubmissionEnvironment.global\_env}).
+  \item[raise\_errors] Raise \cmd{SchedulingError} instead of logging and returning \cmd{None}.
+  \item[laupy\_python] Python environment of the job, recorded as \cmd{laupy\_python}; \cmd{None}
+    records nothing. It is not added to \cmd{slurm\_cmd}: the caller puts \cmd{LAUPY\_PYTHON} into its
+    \cmd{-{}-export}.
+\end{description}
+For non-negative nodes, all non-retired, not completed entries of ancestor nodes are checked with
+\cmd{slurm.get\_active\_slurmids()}: active ones become \cmd{-{}-dependency=afterok:\ldots}, recorded in
+\cmd{dependency\_slurm\_ids}; a failed one stops the submission. The states used are the stored
+ones, so refresh the ancestors first.
+\raises \cmd{SchedulingError} with a one-line reason (only with \cmd{raise\_errors=True}).
+
+\api{resubmit\_slurm\_job(PIPELINE\_ENTRIES, entry\_id, env=None) -> dict | None}
+Submit an entry again with its stored \cmd{slurm\_command}. If its job is still active, it is
+cancelled first. The old entry is retired (\cmd{retired\_reason="Resubmitted"},
+\cmd{retired\_by=<new job\_id>}) only after the new submission succeeded.
+\cmd{entry\_id} is the entry dict, its \cmd{slurm\_id} (\cmd{int} or string of digits) or its
+\cmd{job\_id}; surrounding spaces are ignored and \cmd{bool} is rejected. Entries without a
+\cmd{slurm\_id} never match a string ID. The caller appends the new entry and stores.
+The new entry keeps \cmd{laupy\_python}. For an entry without it, \cmd{LAUPY\_PYTHON} is removed from
+\cmd{env} (or from \cmd{os.environ}), so the job gets the default environment as originally.
+\returns The new entry, or \cmd{None} after logging the reason when the entry is not found, is
+already retired (resubmitting it would start a second job for the same node), or the submission
+fails.
+
+\api{class SchedulingError(RuntimeError)}
+A job could not be scheduled: failed dependency, \cmd{sbatch} failure or invalid DAG.
+
+% ======================================================================
+\section{\texorpdfstring{\cmd{laupy.slurm}}{laupy.slurm}}
+% ======================================================================
+
+\subsection{Constants}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Name & Value \\
+\midrule
+\cmd{ACTIVE\_STATES} & PENDING, RUNNING, REQUEUED, COMPLETING \\
+\cmd{FAILED\_STATES} & FAILED, CANCELLED, TIMEOUT \\
+\cmd{TRANSIENT\_STATES} & COMPLETING: normally seconds; cancel only if stuck. \\
+\cmd{TERMINAL\_STATES} & COMPLETED, FAILED, CANCELLED, TIMEOUT, OUT\_OF\_MEMORY, BOOT\_FAIL, DEADLINE: final, not queried again. \\
+\cmd{QUERY\_CHUNK\_SIZE} & 500: IDs per \cmd{sacct}/\cmd{squeue} call. \\
+\cmd{QUERY\_COUNTS} & \cmd{\{"sacct": n, "squeue": n\}}: calls made by this process, for diagnostics. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Job information}\label{sec:slurminfo}
+
+\api{slurm\_info(slurm\_ids) -> dict | list[dict]}
+Job information from \cmd{sacct}, completed by \cmd{squeue} for pending and running jobs. One call
+of each tool per \cmd{QUERY\_CHUNK\_SIZE} unique IDs. A single ID returns a dict, a list returns a
+list in the same order. IDs that are not SLURM IDs (\cmd{\textbackslash d+} or
+\cmd{\textbackslash d+\_\textbackslash d+}) are not sent, because one invalid ID would make the
+whole call fail; unknown jobs get \cmd{State="UNKNOWN"}.
+
+Keys from \cmd{sacct}: \cmd{JobID}, \cmd{JobName}, \cmd{State}, \cmd{ExitCode}, \cmd{Partition},
+\cmd{User}, \cmd{Elapsed}, \cmd{Timelimit}, \cmd{NNodes}, \cmd{NodeList}, \cmd{Reason}, \cmd{StdOut},
+\cmd{StdErr} (with \cmd{\%j}, \cmd{\%N} replaced). \cmd{squeue} updates \cmd{NodeList}, \cmd{State},
+\cmd{Reason} and \cmd{Elapsed} of queued jobs. States are normalised
+(e.g.\ \emph{CANCELLED by 1234} $\rightarrow$ CANCELLED).
+
+\api{slurm\_sacct\_info(slurm\_ids)\quad slurm\_squeue\_info(slurm\_ids)}
+The two halves of \cmd{slurm\_info()}. \cmd{slurm\_squeue\_info()} reports jobs no longer queued as
+UNKNOWN.
+
+\api{normalize\_state(state) -> str}
+First word of a SLURM state without a trailing \cmd{+}: \emph{CANCELLED by 1234} $\rightarrow$ CANCELLED.
+
+\api{get\_active\_slurmids(dependency\_entries, raise\_on\_fail=False) -> list}
+The \cmd{slurm\_id}s of the entries whose stored state is in \cmd{ACTIVE\_STATES}. Entries in
+\cmd{FAILED\_STATES} print a warning, or raise \cmd{RuntimeError} with
+\cmd{raise\_on\_fail=True}. Other states count as finished.
+
+\api{list\_user\_jobs(user=None) -> list[dict]}
+All queued and running jobs of a user (default: the current one) from \cmd{squeue}. Keys:
+\cmd{JobID}, \cmd{JobName}, \cmd{State}, \cmd{Partition}, \cmd{Elapsed}, \cmd{Timelimit},
+\cmd{Reason}, \cmd{SubmitTime}, \cmd{WorkDir}.
+\raises \cmd{subprocess.CalledProcessError} or \cmd{OSError} when \cmd{squeue} fails.
+
+\api{own\_allocation\_job\_ids() -> set\quad is\_own\_allocation(slurm\_id, own\_ids=None) -> bool}
+The SLURM job the current process runs in (from \cmd{SLURM\_JOB\_ID}/\cmd{SLURM\_JOBID}; empty
+outside SLURM), and whether an ID (also an array task) is that job. Used to protect the caller's
+own allocation from \cmd{scancel}.
+
+\subsection{Submitting and cancelling}
+
+\api{run\_slurm\_command(SLURM\_CMD, cwd=None, env=None) -> int | None}
+Run an \cmd{sbatch} command and return the job ID parsed from \emph{Submitted batch job N}.
+Returns \cmd{None} and logs the command, working directory, stdout and stderr on failure, or when
+the output contains no job ID (the outcome is then uncertain; check SLURM before retrying).
+
+\api{scancel(slurm\_ids) -> str | None}
+One \cmd{scancel} call for one or more IDs. \cmd{None} on success, otherwise the error message.
+\cmd{scancel} still cancels the valid IDs when some fail (e.g.\ already finished), so pass a single
+ID when the outcome per job matters.
+
+% ======================================================================
+\section{\texorpdfstring{\cmd{laupy.cli}}{laupy.cli}}
+% ======================================================================
+
+Helpers shared by \cmd{pipeline} and \cmd{submitslurm}; useful for your own tools with the same
+options.
+
+\api{add\_common\_arguments(parser, suppress\_defaults=False, dry\_run\_help=...)}
+Add \cmd{-d/-{}-root-dir}, \cmd{-w/-{}-working-dir} (comma-separated or repeated),
+\cmd{-{}-slurm-dir}, \cmd{-p/-{}-pattern}, \cmd{-{}-dry-run}, \cmd{-{}-verbose}. With
+\cmd{suppress\_defaults=True} (for a subcommand parent parser), the options only override values
+given before the subcommand when given explicitly.
+
+\api{add\_node\_source\_arguments(parser, offline=False)\quad apply\_node\_source\_arguments(parser, args)}
+Add \cmd{-{}-list FILE}, \cmd{-{}-no-list}, \cmd{-{}-feature-provider} (and \cmd{-{}-offline}) choosing where
+\cmd{laupy.maxwell} takes the nodes from, and apply them with \cmd{maxwell.set\_node\_table()}
+(\cmd{parser.error} on conflicts or a missing file). Applying does not query SLURM.
+\cmd{print\_node\_notes(file=None)} prints and clears \cmd{maxwell.NODE\_NOTES}.
+
+\api{resolve\_directory\_tree(ARG) -> DirectoryTree}
+Change to the root directory and resolve the working directories, the SLURM script directory and
+the processing unit subdirs selected by \cmd{-w}/\cmd{-p}. Prints an error and exits when a
+directory is missing or nothing matches; prints nothing otherwise.
+
+\api{@dataclass DirectoryTree(root, sbatch\_abs, sbatch\_rel, working\_dirs\_rel, processing\_unit\_subdirs)}
+\cmd{root: Path}; \cmd{sbatch\_abs: Path}, \cmd{sbatch\_rel: str}; \cmd{working\_dirs\_rel: list[str]};
+\cmd{processing\_unit\_subdirs: list[ProcessingUnitSubdir]}.
+
+\api{@dataclass ProcessingUnitSubdir(name, abs, rel)}
+Directory name, resolved absolute path, path relative to the root (e.g.\ \cmd{wd/syn001}).
+
+\api{@dataclass SubmissionEnvironment(global\_env=os.environ copy, extra=\{\})}
+Environment of submitted jobs in two layers. \cmd{global\_env} is the environment \cmd{sbatch}
+runs with; every job inherits it through \cmd{-{}-export=ALL}. \cmd{extra} holds additional
+per-job variables (\cmd{submitslurm -{}-env}).
+\begin{description}[leftmargin=2em,font=\ttfamily\mdseries]
+  \item[job\_vars(script\_name, job\_name) -> dict] \cmd{PIPELINE\_SCRIPTNAME},
+    \cmd{PIPELINE\_JOBNAME}, \cmd{LD\_PRELOAD=""}, then \cmd{extra} (which may override them).
+  \item[export\_option(job\_vars) -> str] \cmd{"-{}-export=ALL,NAME=VALUE,\ldots"}.
+  \item[describe\_job\_vars(job\_vars) -> str] Shell-quoted \cmd{NAME=VALUE} list for display.
+  \item[global\_lines() -> list[str]] \cmd{CONDA\_PREFIX} and \cmd{PATH} of \cmd{global\_env} for
+    display, see \cmd{environment\_lines()}.
+\end{description}
+
+\api{environment\_lines(env, indent="    ") -> list[str]}
+\cmd{CONDA\_PREFIX} and the \cmd{PATH} components, one per line; components below
+\cmd{CONDA\_PREFIX} are abbreviated, duplicates and missing directories are flagged.
+
+\api{check\_python\_environment(value) -> str\quad parse\_python\_environment(value) -> str}
+Absolute path of a Conda/Mamba environment (a directory with executable \cmd{bin/python}, no comma) for
+\cmd{LAUPY\_PYTHON}; the first raises \cmd{ValueError}, the second is the \cmd{argparse} type of
+\cmd{submitslurm -{}-python}. \cmd{cli.LAUPY\_PYTHON} is the variable name.
+
+\api{parse\_env\_assignment(value) -> (str, str)\quad parse\_comma\_separated(value) -> list[str]}
+\cmd{argparse} types: \cmd{NAME=VALUE} (no commas in the value, since \cmd{-{}-export} separates
+with commas) and \cmd{"a,b,c"} $\rightarrow$ \cmd{["a", "b", "c"]}.
+
+\api{print\_arguments(ARG)}
+Print the parsed arguments (\cmd{-{}-verbose}).
+
+% ======================================================================
+\section{\texorpdfstring{\cmd{laupy.graph\_utils}}{laupy.graph\_utils}}
+% ======================================================================
+
+A dependency-free replacement for the few \cmd{networkx} functions laupy uses.
+
+\api{class DirectedGraph(edges=None)}
+\cmd{add\_node(n)}, \cmd{add\_edge(u, v)}, \cmd{add\_edges\_from(edges)},
+\cmd{successors(n)}, \cmd{predecessors(n)}; \cmd{n in graph} tests membership.
+
+\api{ancestors(graph, source) -> set}
+All nodes with a path to \cmd{source}, excluding it.
+
+\api{is\_directed\_acyclic\_graph(graph) -> bool\quad find\_cycle(graph) -> list[(u, v)]}
+Acyclicity test; one cycle as an edge list (\cmd{CycleError} if there is none).
+
+\api{topological\_sort(graph, tie\_breaking\_priority=None) -> list\quad topological\_sort\_fifo(graph) -> list}
+Nodes in topological order; \cmd{CycleError} on a cycle. Dependencies define only a partial
+order; \cmd{tie\_breaking\_priority} maps nodes to comparable values (lower first, default
+\cmd{()}) to make the order of independent nodes stable.
+
+\api{class CycleError(Exception)}
+
+% ======================================================================
+\section{\texorpdfstring{\cmd{laupy.maxwell}}{laupy.maxwell}}
+% ======================================================================
+
+Categorises Maxwell nodes by hardware with the GPU/CPU model lists \cmd{GPU\_EXCELLENT},
+\cmd{GPU\_STRONG}, \cmd{GPU\_WEAK}, \cmd{CPU\_EXCELLENT}, \cmd{CPU\_STRONG}, \cmd{CPU\_WEAK}
+(\cmd{GPU\_ALL}, \cmd{CPU\_ALL}: all known models). Used by \cmd{submitslurm -g/-e/-s/-x} and
+\cmd{listnodes}.
+
+\textbf{Where the nodes come from.} SLURM tells which nodes exist and their states; the hardware
+(CPU/GPU models, hence the classes) comes from the feature provider. The SLURM node features
+(\cmd{sinfo -a -N} with \cmd{\%f}, \cmd{get\_live\_node\_table()}) take seconds to query, the node
+states (\cmd{sinfo -N -o "\%N \%t"}) a fraction of a second, so by default
+(\cmd{"app-managed-list"}) the hardware comes from the app-managed node table
+\cmd{default\_node\_table\_path()} = \cmd{\$LAUPY\_MAXWELL\_TSV} or \cmd{\textasciitilde/.laupy/maxwell.tsv}:
+unpacked from \cmd{PACKAGED\_NODE\_TABLE} (\cmd{laupy/maxwell.tsv.gz}) when missing and at once
+updated from SLURM (retried on the next call if that fails), or created from SLURM without it; refreshed from SLURM when older than \cmd{MANAGED\_LIST\_MAX\_AGE\_DAYS} (7).
+Messages about this are collected in \cmd{NODE\_NOTES}. When rows are combined, SLURM values win;
+the table fills FLOPS, warranty and the hardware of nodes without features, resolves ambiguous
+features and keeps nodes SLURM does not report. All queries are made at most once per process and
+cached. A missing table is not an error; without SLURM and without a table the node lists are empty.
+
+\api{set\_node\_table(path=None, live=True, use\_table=True, feature\_provider="app-managed-list")\quad find\_node\_table() -> str | None\quad get\_node\_source() -> dict}
+Choose the sources, dropping the caches: \cmd{path} a table used as it is (\cmd{FileNotFoundError}
+if missing; None: the managed table); \cmd{live=False} queries no SLURM (offline, no refresh);
+\cmd{use\_table=False} no table at all (implies \cmd{"slurm"}); \cmd{feature\_provider}
+\cmd{"app-managed-list"}, \cmd{"list"} (the table as it is, SLURM only for states) or \cmd{"slurm"}
+(features on every call, completed from the table). A table provider without a table falls back
+to \cmd{"slurm"}. \cmd{find\_node\_table()} returns the table to use (managing it if needed);
+\cmd{get\_node\_source()} gives \cmd{\{"source", "table", "live\_error", "feature\_provider",
+"hardware\_from"\}}. \cmd{node\_table\_candidates()}
+lists the searched paths. Every SLURM query is timed in \cmd{QUERY\_LOG};
+\cmd{format\_query\_log()} gives one line per query (shown by \cmd{submitslurm -{}-verbose}).
+
+\api{get\_all\_nodes(partition=None)\quad get\_gpu\_nodes(partition=None)}
+\api{get\_excellent\_nodes / get\_strong\_nodes / get\_weak\_nodes(partition=None)}
+\api{get\_\{excellent,strong,weak\}\_\{gpu,cpu\}\_nodes(partition=None)}
+Host names of each category, optionally limited to partitions (same forms as
+\cmd{partition\_list()}). Built once per process (\cmd{init\_node\_cache()}) from the SLURM query,
+or from the table when SLURM is switched off or fails.
+
+\api{partition\_list(partition) -> list[str]}
+Normalises a partition argument: \cmd{"allcpu,allgpu"} or a list/tuple/set of names; names are
+stripped, empty ones dropped; \cmd{None} or \cmd{""} gives \cmd{[]}, meaning all partitions.
+\raises \cmd{ValueError} for any other type.
+
+\api{select\_nodes(partition=None, node\_class=None, gpu\_only=False, nodelist=None, state="any") -> list[str]}
+Nodes of the partitions that SLURM reports, sorted: \cmd{node\_class} \cmd{"excellent"},
+\cmd{"strong"} (includes excellent) or \cmd{"weak"}; \cmd{gpu\_only}; \cmd{nodelist} (SLURM syntax
+or a list); \cmd{state} \cmd{"any"}, \cmd{"up"} (\cmd{node\_is\_up()}) or \cmd{"idle"}. One cached
+query for classes and states. Used by \cmd{listnodes}.
+
+\api{sbatch\_node\_request(partition=None, nodelist=None, gpu\_only=False, excellent=False, strong=False, exclude\_weak=False) -> NodeRequest}
+The node options of \cmd{submitslurm}: \cmd{NodeRequest} has \cmd{nodelist} (required nodes, only
+nodes that are up), \cmd{exclude} (weak nodes), \cmd{error} (no available node for \cmd{-n}/\cmd{-g}:
+do not submit), \cmd{notes} (skipped nodes, fallback without restriction) and
+\cmd{sbatch\_arguments()} (\cmd{-{}-nodelist=}/\cmd{-{}-exclude=}, never empty).
+
+\api{get\_live\_nodes(partition=None, idle\_only=False) -> list[str]}
+Nodes reported by \cmd{sinfo} in any state (optionally only idle ones), for the partitions given
+as in \cmd{partition\_list()}. Reuses the query of the node lists, so \cmd{submitslurm} with node
+options makes a single \cmd{sinfo} call.
+
+\api{nodes\_from\_string(s) -> list[str]\quad expand\_node\_ranges(entry) -> list[str]}
+Expand SLURM node lists: \cmd{"max-node[001-003,007]"} $\rightarrow$ individual host names (numbers zero-padded to three digits).
+
+\api{compress\_node\_list(nodes) -> str}
+The inverse: \cmd{["max-wng004", "max-wng005", "max-wng007"]} $\rightarrow$
+\cmd{"max-wng[004-005,007]"}. Names without a three-digit suffix are kept as they are.
+
+\api{get\_cluster\_topology(partition=None, live=True, table\_path=None) -> dict}
+Describes the cluster (\cmd{listnodes -{}-topology}). By default SLURM is the source of truth
+(\cmd{get\_live\_node\_table()}, the same query as the node lists); the node table, if any, only
+fills gaps, resolves ambiguous features and is compared with it. If \cmd{sinfo} fails it falls back
+to the table without states. \cmd{live=False} queries nothing and describes the table;
+\cmd{table\_path} is a shortcut for \cmd{set\_node\_table(table\_path, live=live)}.
+Keys:
+\begin{description}[style=nextline,leftmargin=1.5em,itemsep=0pt]
+  \item[\cmd{nodes}] One dict per described node in the partitions: Host, CPU, GPU (list), Memory,
+    CPUCount, Partitions, Warranty, \cmd{class} (excellent, strong or weak; \emph{default} for hardware in \cmd{GPU\_ALL}/\cmd{CPU\_ALL}
+    but in none of these classes; \emph{unclassified} for hardware not in \cmd{GPU\_ALL}/\cmd{CPU\_ALL}), \cmd{state}
+    (compact \cmd{sinfo} state such as \cmd{idle}, \cmd{mix}, \cmd{drain}, \cmd{down*}) and
+    \cmd{up}; the last two are \cmd{None} without live data.
+  \item[\cmd{gpu\_types}] \cmd{\{type: \{"nodes": [...], "gpus": n\}\}} for nodes with GPUs.
+  \item[\cmd{cpu\_types}] \cmd{\{cpu: [nodes]\}} for nodes without GPUs.
+  \item[\cmd{classes}] Nodes per class, as used by \cmd{submitslurm -e/-s/-x}.
+  \item[\cmd{not\_described}] Nodes \cmd{sinfo} reports that are missing in the table.
+  \item[\cmd{table}] Path of the node table, \cmd{None} without one.
+  \item[\cmd{unknown\_hardware}] \cmd{\{"GPU X" | "CPU Y": [nodes]\}}: hardware not in \cmd{GPU\_ALL}
+    or \cmd{CPU\_ALL}, with the (unclassified) nodes that have it. Nodes with GPUs are judged by their GPUs,
+    nodes without GPU by their CPU (\cmd{unknown\_hardware(node)}, \cmd{node\_class(node)}).
+  \item[\cmd{source}, \cmd{partitions}, \cmd{live\_error}] \cmd{"sinfo"} or the path of the table used,
+    the partitions used, and why \cmd{sinfo} could not be queried (\cmd{None} if it could).
+    A failing \cmd{sinfo} does not raise.
+  \item[\cmd{not\_in\_sinfo}, \cmd{hardware\_differs}, \cmd{filled\_from\_table}] SLURM source only:
+    table nodes SLURM does not report; \cmd{(host, table hardware, SLURM hardware)} tuples; and
+    \cmd{\{host: [fields]\}} taken from the table because SLURM gave no features.
+\end{description}
+\cmd{not\_described}, \cmd{not\_in\_sinfo}, \cmd{hardware\_differs} and \cmd{unknown\_hardware} show
+where the node table or the model lists need updating.
+
+\api{get\_live\_node\_table(table=None) -> list[dict]}
+All nodes from \cmd{sinfo -a -N -o "\%N|\%P|\%t|\%c|\%z|\%m|\%G|\%f"} in the row format of
+\cmd{parse\_maxwell\_tsv()}, plus \cmd{state} and \cmd{source} (fields taken from the table).
+Partitions, state, CPUs (\cmd{"40 (2/10/2)"}), memory, GPU count (gres, else the \cmd{GPUxN}
+feature) and the CPU/GPU models (features) come from SLURM; FLOPS, Warranty and the hardware of
+nodes without features from \cmd{table} (default: the node table found, if any). CPU load
+(\cmd{\%C}) is in \cmd{cpu\_load}.
+\raises \cmd{RuntimeError} when \cmd{sinfo} is missing or fails.
+
+\api{hardware\_from\_features(features, table\_row=None) -> (cpu, gpu\_model, gpu\_count)}
+CPU and GPU model from node features, named as in \cmd{maxwell.tsv} and the \cmd{GPU\_*}/\cmd{CPU\_*}
+lists: \cmd{Gold-6240} $\rightarrow$ \cmd{"Gold 6240 CPU @ 2.60GHz"}, \cmd{EPYC, 9374F} $\rightarrow$
+\cmd{"AMD EPYC 9374"}, \cmd{E5-2640} with \cmd{V4} $\rightarrow$ \cmd{"E5-2640 v4 @ 2.40GHz"}. GPU
+features are mapped by \cmd{GPU\_FEATURE\_NAMES} (\cmd{A100} $\rightarrow$ \cmd{GA100}, \ldots);
+features in \cmd{GPU\_AMBIGUOUS\_FEATURES} (\cmd{RTX6000}: RTX A6000 or GB202GL RTX PRO) take the
+model from \cmd{table\_row}; unknown features (e.g.\ \cmd{L40S}) are kept as they are and show up as
+unclassified. \cmd{None} where the features say nothing.
+
+\api{update\_node\_table(file\_path=None) -> (path, count, live\_rows)\quad write\_node\_table(file\_path, rows) -> int}
+Refresh a table from a SLURM feature query (default: the managed one; created if missing), combined
+with its old content (\cmd{listnodes -{}-update-default-list}, \cmd{-{}-update-list FILE}); and write
+rows atomically (temporary file and rename, so parallel runs never read half a file).
+\raises \cmd{RuntimeError} when SLURM cannot be queried.
+
+\api{gres\_gpu\_count(gres) -> int | None\quad export\_topology(file\_path, rows=None) -> int}
+GPUs in a \cmd{\%G} string (\cmd{"gpu:a100:4(S:0-1)"} $\rightarrow$ 4); and writing the nodes SLURM
+reports, completed from the node table in use (or \cmd{rows}), as a \cmd{maxwell.tsv} file
+(\cmd{listnodes -{}-export-topology}). Table nodes SLURM does not report are kept as they are in the table.
+\raises \cmd{RuntimeError} when SLURM cannot be queried.
+
+\api{format\_cluster\_topology(topology, verbose=False, user=None, color=False) -> str}
+The text report printed by \cmd{listnodes -{}-topology}; \cmd{verbose} adds one line per node.
+Given the result of \cmd{get\_cluster\_workload()} it prints the \cmd{-{}-workload} report, with the
+jobs of \cmd{user} (default \cmd{current\_user()}) marked, in green with \cmd{color=True}. GPU types
+are split by GPUs per node.
+
+\api{get\_cluster\_workload(partition=None, table\_path=None) -> dict}
+\cmd{get\_cluster\_topology()} plus the current load (\cmd{listnodes -{}-workload}). Each node also
+gets \cmd{idle} (up, idle state, no CPU allocated), \cmd{cpus\_idle} and \cmd{cpus\_total}. The extra
+key \cmd{workload} holds \cmd{error} (\cmd{None} or why \cmd{sinfo}/\cmd{squeue} failed; it does not
+raise), \cmd{running\_jobs}, \cmd{running\_users} (\cmd{\{user: \{"jobs", "nodes", "pending"\}\}}),
+\cmd{pending\_jobs}, \cmd{pending\_reasons}, \cmd{pending\_partitions} and \cmd{node\_users}
+(\cmd{\{node: \{user: running jobs\}\}}). Running jobs are counted on the described nodes whatever
+their partition; pending jobs only in the given partitions.
+
+\api{get\_queue\_jobs(partition=None) -> list[dict]\quad get\_node\_cpu\_load(partition=None) -> dict\quad array\_task\_count(job\_id) -> int}
+The \cmd{squeue} and \cmd{sinfo} queries behind it: jobs with \cmd{job\_id}, \cmd{user},
+\cmd{state}, \cmd{partition}, \cmd{nodes}, \cmd{cpus}, \cmd{reason}, \cmd{tasks}; per-node CPUs
+\cmd{\{"alloc", "idle", "other", "total"\}}; and the number of tasks of a pending array
+(\cmd{"123\_[1-100\%10]"} $\rightarrow$ 100). The first two raise \cmd{RuntimeError} when the
+command fails.
+
+\api{get\_live\_node\_states(partition=None) -> dict[str, str]\quad node\_is\_up(state) -> bool\quad node\_class(node) -> str}
+Per-node compact states from \cmd{sinfo -N}; whether a state can run jobs (\cmd{idle}, \cmd{mix},
+\cmd{alloc}, \ldots, not down, drained or not responding \cmd{*}); and the class of a table row.
+\raises \cmd{RuntimeError} from \cmd{get\_live\_node\_states()} when \cmd{sinfo} is missing or fails.
+
+\api{parse\_maxwell\_tsv(file\_path) -> list[dict]\quad get\_node\_description()\quad run\_command(command)}
+Table parsing (GPU column \cmd{"4xRTX 2080"} becomes a list of four names, partitions a list,
+wiki-escaped \cmd{\textbackslash\_} in partition names becomes \cmd{\_}), the
+cached table, and a subprocess helper returning stdout.
+
+% ======================================================================
+\section{\texorpdfstring{\cmd{laupy.redis\_server}}{laupy.redis\_server}}
+% ======================================================================
+
+Lifecycle of a temporary Redis server, as used for the GPU pool. The \cmd{REDIS} command is its
+command line, and \cmd{GPU -{}-try-start-server} calls it directly, so neither depends on the other
+being on \cmd{PATH}. Messages go through an \cmd{out} function (\cmd{print} by default; \cmd{GPU}
+passes one writing to stderr, as its stdout carries only results). Problems are logged through the
+module's logger \cmd{laupy.redis\_server}; the module configures no handler, the calling command
+decides where log messages go. Failures raise \cmd{RedisLifecycleError} (a \cmd{RuntimeError}).
+
+\api{RedisManager(host, port, redis\_server, pidfile, log\_dir, no\_log, out)}
+Defaults: \cmd{host="127.0.0.1"}, \cmd{port=6379}, \cmd{redis\_server="redis-server"},
+\cmd{pidfile=None}, \cmd{log\_dir="log"}, \cmd{no\_log=False}, \cmd{out=print}.
+A Redis instance on \cmd{host:port}, identified by its PID file (default
+\cmd{/tmp/laupy-gpu-<uid>-<SLURM job or local>-<port>.pid}). The log is timestamped
+(\cmd{<log\_dir>/laupy-gpu-<time>-<job>-<port>.log}, \cmd{log\_dir} relative to the working
+directory); \cmd{no\_log} writes none. \cmd{redis\_server} is a name searched in \cmd{PATH} or a path.
+
+\api{start(kill\_unresponsive=False, extra\_config=(), dry\_run=False)}
+Starts the server unless a responsive Redis already runs on the port (whoever started it). Persistence
+is off and the database file name is timestamped, so no old state is loaded. A port held by your own
+\cmd{redis-server} that does not respond is freed only with \cmd{kill\_unresponsive} (SIGTERM, then
+SIGKILL); a port held by something else is refused. \cmd{dry\_run} only reports the configuration and
+the files a start would create.
+
+\api{stop(force=False, dump=False)\quad restart(...)\quad status()}
+\cmd{stop} shuts down the server of the PID file (\cmd{SHUTDOWN NOSAVE}); \cmd{force} ignores the PID
+file and terminates your own \cmd{redis-server} on the port; \cmd{dump} first saves the data to the
+timestamped RDB file in \cmd{log\_dir}. \cmd{restart} takes the options of both. \cmd{status} reports
+the port, the server, the PID file and the log, and logs inconsistencies as warnings.
+
+\api{probe\_client(host, port, **client\_options) -> redis.Redis\quad ping(host, port) -> bool}
+A client for quick checks of a server that may be hung: connecting gives up after
+\cmd{PROBE\_CONNECT\_TIMEOUT} (1~s), each reply after \cmd{PROBE\_TIMEOUT} (3~s), with no retries
+(redis-py $\geq$ 6 retries timed-out commands by default, about 38~s per call). Not for clients that
+wait for work, such as \cmd{BRPOP}. \cmd{client\_options} are further \cmd{redis.Redis} arguments
+(e.g.\ \cmd{db}, \cmd{decode\_responses}).
+
+\api{describe\_port(host, port, verbose=False, out=print) -> dict\quad port\_owners(port) -> dict}
+Who listens on the port (\cmd{psutil}, no \cmd{ss} needed; other users' processes are not visible, a
+connection test tells such a port from a free one) and whether a responsive Redis answers:
+\cmd{port\_state} \cmd{"free"}, \cmd{"redis"} or \cmd{"occupied"}, plus \cmd{owner\_unknown}.
+
+% ======================================================================
+\section{\texorpdfstring{\cmd{laupy.util}}{laupy.util}}
+% ======================================================================
+
+\api{list\_processes(pattern="kct-", skip\_pid=None) -> list[dict]}
+Processes whose name matches \cmd{pattern}: \cmd{pid}, \cmd{cmdline}, \cmd{cwd}.
+
+\api{get\_process\_info(pid) -> dict\quad print\_process\_info(proc\_info)}
+\cmd{pid}, \cmd{ppid}, \cmd{name}, \cmd{cmdline}, \cmd{cwd} of one process; printing helper.
+
+\appendix
+
+% ======================================================================
+\section{Entry fields}\label{sec:fields}
+% ======================================================================
+
+\begin{longtable}{@{}>{\raggedright}p{0.32\linewidth}>{\raggedright\arraybackslash}p{0.64\linewidth}@{}}
+\toprule
+Field & Meaning \\
+\midrule
+\endhead
+\cmd{job\_id} & laupy entry ID, 32 hex characters (\cmd{uuid4().hex}). \\
+\cmd{slurm\_id} & SLURM job ID (\cmd{int}). \\
+\cmd{script\_name} & Script file name, e.g.\ \cmd{02destar.sbatch}. \\
+\cmd{job\_name} & SLURM job name, \cmd{<script>\_<subdir>} in \cmd{submitslurm}. \\
+\cmd{dag\_node\_name} & Node as string: \cmd{"3"}, \cmd{"reco"}, \cmd{"-1"}. \\
+\cmd{step} & Step number; $-2$ for named nodes. \\
+\cmd{dag\_node\_deps} & Parents of a named node (\cmd{[]} for numeric nodes). \\
+\cmd{dependency\_slurm\_ids} & SLURM IDs the job waited for (\cmd{afterok}). \\
+\cmd{command} & Script command, space-joined. \\
+\cmd{slurm\_command} & Full \cmd{sbatch} argument list, used by \cmd{resubmit\_slurm\_job()}. \\
+\cmd{laupy\_python} & Python environment (\cmd{LAUPY\_PYTHON}) exported to the job; absent for the default. \\
+\cmd{processing\_unit\_subdir} & Absolute path of the processing unit. \\
+\cmd{processing\_unit\_name} & Its directory name. \\
+\cmd{timestamp} & Submission time, Unix seconds. \\
+\cmd{slurm\_info} & Last known SLURM data, keys as from \cmd{slurm\_info()}. \\
+\cmd{retired} & \cmd{True} once retired. \\
+\cmd{retire\_timestamp} & When it was retired. \\
+\cmd{retired\_reason} & Free text, e.g.\ \emph{Resubmitted}, \emph{pipeline retire}. \\
+\cmd{retired\_by} & \cmd{job\_id} of the entry that replaced it. \\
+\bottomrule
+\end{longtable}
+
+Fields written by laupy before 1.2.5: \cmd{execution\_unit\_dir} and \cmd{execution\_unit\_name}
+are renamed on load.
+
+% ======================================================================
+\section{Behaviour worth knowing}
+% ======================================================================
+
+\begin{itemize}
+  \item \textbf{States are only as fresh as the last refresh.} Selection, dependency resolution and
+    cancellation use \cmd{slurm\_info}; refresh before deciding.
+  \item \textbf{Final states are cached.} With \cmd{filter\_terminal\_states=True} (the default),
+    entries in \cmd{TERMINAL\_STATES} are never queried again. Refresh with
+    \cmd{filter\_terminal\_states=False} to re-read them.
+  \item \textbf{Nothing saves implicitly} except \cmd{retire\_selected()}, \cmd{cancel\_selected()}
+    and the \cmd{PipelineEntriesStore.store()} you call.
+  \item \textbf{\cmd{schedule\_slurm\_job()} and \cmd{resubmit\_slurm\_job()} do not append} the new
+    entry; append it, then store.
+  \item \textbf{\cmd{sbatch} runs in the project root}, two levels above the processing unit, so
+    relative paths in \cmd{slurm\_cmd} are relative to the root.
+  \item \textbf{Logging:} laupy logs through \cmd{logging.getLogger("laupy.\ldots")}; configure the
+    root logger to see the details of failed submissions.
+\end{itemize}
+
+\end{document}
