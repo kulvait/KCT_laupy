@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import threading
+import time
 import logging
 
 import psutil
@@ -40,6 +41,9 @@ logging.getLogger("laupy.redis_server").propagate = False
 # Seconds between checks of a waiting --get for GPUs held by processes that no longer exist (purgeWhileWaiting).
 # Every waiting process checks, so this is kept long; a crashed holder's GPU comes back within this time.
 WAIT_PURGE_INTERVAL = 180
+# Seconds an active GPU may be without a holder record before a purge returns it (see purgeNonexistentProcesses).
+# Normally a GPU is without record only for milliseconds, between BRPOP and writing the record in --get.
+NO_HOLDER_GRACE = 60
 
 def buildParser():
 	parser = argparse.ArgumentParser(description="GPU management through Redis server")
@@ -61,7 +65,7 @@ def buildParser():
 	action.add_argument("--redis-manage-all", action="store_true", help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with all available GPU.")
 	action.add_argument("--redis-manage", type=str, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with specified GPUs provided as comma separated list.")
 	action.add_argument("--redis-manage-count", type=int, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with N GPUs, where N is the number of GPUs to be managed.")
-	action.add_argument("--redis-delete", action="store_true", help="Delete all Redis objects related to GPU management (refused while GPUs are in use, unless --force).")
+	action.add_argument("--redis-delete", action="store_true", help="Delete all Redis objects related to GPU management (refused while GPUs are in use or processes wait for one, unless --force).")
 	action.add_argument("--redis-purge", action="store_true", help="Return the GPUs of holders that no longer exist (a waiting --get also does this every few minutes).")
 	action.add_argument("--redis-managed-insert", default=None, type=int, help="Insert GPU ID to managed IDs.")
 	action.add_argument("--redis-managed-delete", default=None, type=int, help="Remove GPU ID from managed IDs.")
@@ -200,27 +204,31 @@ def holderAlive(pid, start=None):
 # card. Redis runs a Lua script as one step that no other client can interrupt, so check and change happen together.
 
 # Return a GPU to the idle list, unless it is already there or no longer held by the expected process.
-#   KEYS[1]: idle list, KEYS[2]: holder hash; ARGV[1]: GPU ID, ARGV[2]: expected holder PID ('' = any holder)
+#   KEYS[1]: idle list, KEYS[2]: holder hash; ARGV[1]: GPU ID,
+#   ARGV[2]: expected holder PID ('' = any holder, '-' = only if there is no holder record at all)
 #   Returns 1 if returned, 0 if it was already idle, -1 if the holder is not the expected one (taken meanwhile).
 RETURN_GPU_SCRIPT = """
 for _, id in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
 	if id == ARGV[1] then return 0 end
 end
-if ARGV[2] ~= '' and redis.call('HGET', KEYS[2], 'PID') ~= ARGV[2] then return -1 end
+if ARGV[2] == '-' then
+	if redis.call('EXISTS', KEYS[2]) == 1 then return -1 end
+elseif ARGV[2] ~= '' and redis.call('HGET', KEYS[2], 'PID') ~= ARGV[2] then return -1 end
 redis.call('DEL', KEYS[2])
 redis.call('LPUSH', KEYS[1], ARGV[1])
 return 1
 """
 
-def returnGPU(rs, prefix, gpu_id, expected_pid=None):
+def returnGPU(rs, prefix, gpu_id, expected_pid=None, require_no_holder=False):
 	"""Atomically put a GPU back to the idle list and forget its holder (see RETURN_GPU_SCRIPT).
 
 	expected_pid: return it only if this PID still holds it, so that a GPU which was meanwhile returned and taken by
-	another process is not taken away from it. Returns 1 (returned), 0 (already idle) or -1 (other holder).
+	another process is not taken away from it. require_no_holder: return it only if it still has no holder record.
+	Returns 1 (returned), 0 (already idle) or -1 (other holder).
 	"""
 	script = rs.register_script(RETURN_GPU_SCRIPT)
-	return int(script(keys=["%s_IDLE"%(prefix), "%s_GPU%d"%(prefix, int(gpu_id))],
-	                  args=[int(gpu_id), "" if expected_pid is None else str(expected_pid)]))
+	condition = "-" if require_no_holder else ("" if expected_pid is None else str(expected_pid))
+	return int(script(keys=["%s_IDLE"%(prefix), "%s_GPU%d"%(prefix, int(gpu_id))], args=[int(gpu_id), condition]))
 
 # Add a GPU to the pool unless it is managed already (two simultaneous inserts must not add it twice).
 #   KEYS[1]: managed list, KEYS[2]: idle list; ARGV[1]: GPU ID. Returns 1 if added, 0 if already managed.
@@ -235,13 +243,13 @@ return 1
 
 # Create the pool in one step unless it exists (or replace it with force), so that two jobs setting up the pool at the
 # same moment can not both fill it.
-#   KEYS: 1 idle list, 2 managed list, 3 events, 4 INIT hash, 5 PLATFORM hash
+#   KEYS: 1 idle list, 2 managed list, 3 events, 4 INIT hash, 5 PLATFORM hash, 6 NOHOLDER hash
 #   ARGV: 1 force ('1' or '0'), 2 time, 3 managed IDs comma separated, 4 GPU count, 5 platform ID, 6 platform name,
 #         7 platform device count, 8 event message, 9... managed GPU IDs
 #   Returns 1 if the pool was created, 0 if it already existed.
 CREATE_POOL_SCRIPT = """
 if ARGV[1] ~= '1' and redis.call('EXISTS', KEYS[4]) == 1 then return 0 end
-redis.call('DEL', KEYS[1], KEYS[2], KEYS[3], KEYS[4])
+redis.call('DEL', KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[6])
 for i = 9, #ARGV do
 	redis.call('LPUSH', KEYS[1], ARGV[i])
 	redis.call('LPUSH', KEYS[2], ARGV[i])
@@ -257,7 +265,7 @@ def createPool(rs, prefix, managedList, GPUcount, managedPlatform, force=False):
 	now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 	event = "%s: Redis initialized, %d managed GPUs, platform ID %d."%(now, len(managedList), managedPlatform["id"])
 	script = rs.register_script(CREATE_POOL_SCRIPT)
-	keys = ["%s_%s"%(prefix, name) for name in ("IDLE", "MANAGED", "EVENTS", "INIT", "PLATFORM")]
+	keys = ["%s_%s"%(prefix, name) for name in ("IDLE", "MANAGED", "EVENTS", "INIT", "PLATFORM", "NOHOLDER")]
 	args = ["1" if force else "0", now, ",".join(str(i) for i in managedList), GPUcount, managedPlatform["id"],
 	        managedPlatform["name"], len(managedPlatform["devices"]), event] + [int(i) for i in managedList]
 	return int(script(keys=keys, args=args)) == 1
@@ -379,11 +387,21 @@ def removeGPU(rs, prefix, GPUID):
 		rs.lpush("%s_EVENTS"%(prefix), msg)
 		rs.lrem("%s_MANAGED"%(prefix), 0, GPUID)
 		rs.lrem("%s_IDLE"%(prefix), 0, GPUID)
+		rs.hdel("%s_NOHOLDER"%(prefix), GPUID)
 		print(msg)
 		return 0
 
 def purgeNonexistentProcesses(rs, prefix):
+	"""Return the GPUs whose holder ended without --release, and GPUs that stay without holder record.
+
+	A GPU is without holder record between BRPOP and writing the record in --get, normally for milliseconds. If
+	--get is killed exactly then, the GPU is neither idle nor held and would be lost for good. Such a GPU is marked
+	when first seen (hash <prefix>_NOHOLDER) and returned by a later purge once NO_HOLDER_GRACE seconds have passed.
+	"""
 	activeList = getActiveGPUs(rs, prefix)
+	marks_key = "%s_NOHOLDER"%(prefix)
+	marks = rs.hgetall(marks_key)
+	without_holder = set()
 	for i in activeList:
 		record = rs.hgetall("%s_GPU%d"%(prefix, int(i)))
 		if record.get("PID") is not None:
@@ -393,6 +411,21 @@ def purgeNonexistentProcesses(rs, prefix):
 			if not holderAlive(PID, record.get("START")) and returnGPU(rs, prefix, i, expected_pid=PID) == 1:
 				LOG = "%s: GPU %s acquired by process with PID %d, was released by redis purge as the process with given PID does no longer exist."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i, PID)
 				rs.lpush("%s_EVENTS"%(prefix), LOG)
+			continue
+		without_holder.add(str(i))
+		first_seen = marks.get(str(i))
+		if first_seen is None:
+			rs.hsetnx(marks_key, i, time.time())	# First time seen without holder record
+		elif time.time() - float(first_seen) > NO_HOLDER_GRACE:
+			# Returned only if it still has no holder record (the --get may just have written one)
+			if returnGPU(rs, prefix, i, require_no_holder=True) == 1:
+				LOG = "%s: GPU %s was in use without holder record for more than %d s (an interrupted --get?), returned by redis purge."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i, NO_HOLDER_GRACE)
+				rs.lpush("%s_EVENTS"%(prefix), LOG)
+			rs.hdel(marks_key, i)
+	# Marks of GPUs that got a holder record or became idle meanwhile are no longer needed
+	stale = [gpu for gpu in marks if gpu not in without_holder]
+	if stale:
+		rs.hdel(marks_key, *stale)
 
 def liveHolders(rs, prefix):
 	"""[(GPU ID, PID, TIME)] of active GPUs whose recorded holder process is still running."""
@@ -402,6 +435,13 @@ def liveHolders(rs, prefix):
 		if record.get("PID") is not None and holderAlive(int(record["PID"]), record.get("START")):
 			holders.append((i, int(record["PID"]), record.get("TIME", "?")))
 	return holders
+
+def waitingClients(rs):
+	"""Number of clients of this Redis server blocked in a waiting command, e.g. a GPU --get in BRPOP.
+
+	Redis does not tell which list a client waits for, so these may also wait for another pool on the same server.
+	"""
+	return sum(1 for client in rs.client_list() if "b" in client.get("flags", ""))
 
 def purgeWhileWaiting(make_client, prefix, stop):
 	"""Watcher thread of a waiting --get: every WAIT_PURGE_INTERVAL seconds, return the GPUs of holders that no
@@ -707,11 +747,14 @@ def main_with_discovery(argv=None):
 	
 	if ARG.redis_delete:
 		holders = liveHolders(rs, ARG.redis_prefix)
-		if holders and not ARG.force:
-			# Their --release would fail and processes waiting for a GPU would wait for a pool that is gone
-			print("Refusing to delete the GPU pool while GPUs are in use (use --force to delete anyway):", file=sys.stderr)
+		waiting = waitingClients(rs)
+		if (holders or waiting) and not ARG.force:
+			# The holders' --release would fail, and processes waiting for a GPU would wait for a pool that is gone
+			print("Refusing to delete the GPU pool while it is in use (use --force to delete anyway):", file=sys.stderr)
 			for gpu, pid, since in holders:
 				print("  GPU %d held by running PID %d since %s"%(gpu, pid, since), file=sys.stderr)
+			if waiting:
+				print("  %d process(es) waiting for a GPU"%(waiting), file=sys.stderr)
 			return 1
 		managed = rs.lrange("%s_MANAGED"%(ARG.redis_prefix), 0, -1)
 		if len(managed) > 0:
@@ -724,6 +767,7 @@ def main_with_discovery(argv=None):
 		rs.delete("%s_EVENTS"%(ARG.redis_prefix))
 		rs.delete("%s_INIT"%(ARG.redis_prefix))
 		rs.delete("%s_PLATFORM"%(ARG.redis_prefix))
+		rs.delete("%s_NOHOLDER"%(ARG.redis_prefix))
 		print("All Redis objects related to GPU management were deleted.")
 		return 0
 	
