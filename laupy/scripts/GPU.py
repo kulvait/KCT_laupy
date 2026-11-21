@@ -7,6 +7,7 @@
 import argparse
 import subprocess
 import datetime
+import json
 import os
 import re
 import sys
@@ -20,7 +21,7 @@ from redis.backoff import NoBackoff
 from redis.retry import Retry
 from termcolor import colored
 
-from laupy.redis_server import RedisLifecycleError, RedisManager, probe_client
+from laupy.redis_server import RedisLifecycleError, RedisManager, pidfile_pid, probe_client, process_exists
 
 # Create a logger specific to this module
 log = logging.getLogger(__name__)
@@ -55,6 +56,8 @@ def buildParser():
 	parser.add_argument("--pid", type=int, default=None, help="Process that holds the GPU for --get and --release, instead of the parent process. Pass the long-running process that uses the GPU: when it ends, its GPU is returned to the pool.")
 	parser.add_argument("--force", action="store_true", help="With --redis-manage*: replace an existing pool. With --redis-delete: delete even while GPUs are in use. Replacing is refused while running processes hold GPUs.")
 	parser.add_argument("--try-start-server", action="store_true", help="Ensure local Redis exists, then initialize or reuse a matching GPU pool",)
+	parser.add_argument("--subscribe", action="store_true", help="With --redis-manage*: after creating or joining the pool, subscribe the process given by --pid (default: the calling process) as a user of the pool. Use GPU --unsubscribe --try-stop-server at the end; the last subscriber alive stops the server.")
+	parser.add_argument("--try-stop-server", action="store_true", help="With --unsubscribe: stop the Redis server if no subscriber alive remains.")
 	parser.add_argument("--kill-unresponsive-server", action="store_true", help="With --try-start-server: if your own redis-server holds the port but does not respond, stop it (SIGTERM, then SIGKILL) and start a new one")
 	parser.add_argument("--managed-platform-id", type=int, help="Specify the OpenCL platform ID to be managed. If not specified, the default platform will be used. Use only with --redis-manage-all, --redis-manage or --redis-manage-count.")
 	action = parser.add_mutually_exclusive_group(required=True)
@@ -65,6 +68,7 @@ def buildParser():
 	action.add_argument("--redis-manage-all", action="store_true", help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with all available GPU.")
 	action.add_argument("--redis-manage", type=str, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with specified GPUs provided as comma separated list.")
 	action.add_argument("--redis-manage-count", type=int, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with N GPUs, where N is the number of GPUs to be managed.")
+	action.add_argument("--unsubscribe", action="store_true", help="Remove the subscription of --pid (default: the calling process); see --subscribe and --try-stop-server.")
 	action.add_argument("--redis-delete", action="store_true", help="Delete all Redis objects related to GPU management (refused while GPUs are in use or processes wait for one, unless --force).")
 	action.add_argument("--redis-purge", action="store_true", help="Return the GPUs of holders that no longer exist (a waiting --get also does this every few minutes).")
 	action.add_argument("--redis-managed-insert", default=None, type=int, help="Insert GPU ID to managed IDs.")
@@ -270,35 +274,74 @@ def createPool(rs, prefix, managedList, GPUcount, managedPlatform, force=False):
 	        managedPlatform["name"], len(managedPlatform["devices"]), event] + [int(i) for i in managedList]
 	return int(script(keys=keys, args=args)) == 1
 
-def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=False, try_start_server=False):
+def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=False):
+	"""Create the pool, or join the existing one as it is. Returns the number of managed GPUs, or None if the
+	existing pool can not be joined (the reason is printed): it has no GPUs, another platform, or no platform record."""
 	if createPool(rs, prefix, managedList, GPUcount, managedPlatform, force=force):
-		return 0
-	# The pool exists (possibly created by another process a moment ago)
-	lastinit_data = rs.hgetall("%s_INIT"%(prefix))
-	if try_start_server:
-		# If the server was started by this script, but INIT data already exists, return true only if GPUcount and managedList match the existing data, otherwise fail with an error.
-		existing_gpu_count = int(lastinit_data.get("GPUCOUNT", 0))
-		existing_managed = lastinit_data.get("GPUMANAGED", "")
-		existing_managed_list = [int(i) for i in existing_managed.split(",") if i.strip() != ""]
-		if existing_gpu_count != GPUcount:
-			print("Error: Existing GPU count (%d) does not match requested GPU count (%d). Use --force to reinitialize." % (existing_gpu_count, GPUcount), file=sys.stderr)
-			return -1
-		if sorted(existing_managed_list) != sorted(managedList):
-			print("Error: Existing managed GPU list (%s) does not match requested managed GPU list (%s). Use --force to reinitialize." % (existing_managed_list, managedList), file=sys.stderr)
-			return -1
-		existing_platform_id = rs.hget("%s_PLATFORM"%(prefix), "ID")
-		if existing_platform_id is None:
-			print("Error: The existing pool has no platform record (left by an older version?). Replace it with --force.", file=sys.stderr)
-			return -1
-		if managedPlatform["id"] != int(existing_platform_id):
-			print("Error: Existing managed platform ID (%d) does not match requested managed platform ID (%d). Use --force to reinitialize." % (int(existing_platform_id), managedPlatform["id"]), file=sys.stderr)
-			return -1
-		# If all checks pass, purge the existing data without reinitializing, since the server was just started and the data is consistent.
-		purgeNonexistentProcesses(rs, prefix)
-		return 0
-	else:
-		print("Objects already initialized, add force to proceed.", file=sys.stderr)
-		return -1
+		return len(managedList)
+	# The pool exists (possibly created by another process a moment ago): use it as it is
+	existing_platform_id = rs.hget("%s_PLATFORM"%(prefix), "ID")
+	if existing_platform_id is None:
+		print("Error: The existing GPU pool has no platform record (left by an older version?). Replace it with --redis-manage* --force.", file=sys.stderr)
+		return None
+	if managedPlatform["id"] != int(existing_platform_id):
+		print("Error: The existing GPU pool manages OpenCL platform %d, not platform %d. Replace it with --redis-manage* --force, or use another --redis-prefix." % (int(existing_platform_id), managedPlatform["id"]), file=sys.stderr)
+		return None
+	managed = getManagedGPUs(rs, prefix)
+	if not managed:
+		# Joining would mean waiting for a GPU that never comes
+		print("Error: The existing GPU pool manages no GPUs; not joining it.", file=sys.stderr)
+		return None
+	init = rs.hgetall("%s_INIT"%(prefix))
+	message = "Joining the existing GPU pool (set up %s): GPUs %s." % (init.get("TIME", "at an unknown time"), ",".join(str(i) for i in managed))
+	if sorted(managedList) != managed:
+		message += " It is used as it is (requested: %s)." % (",".join(str(i) for i in sorted(managedList)))
+	print(message, file=sys.stderr)
+	purgeNonexistentProcesses(rs, prefix)
+	return len(managed)
+
+# Subscribers: processes using the pool (e.g. the sbatch script of a reconstruction), hash <prefix>_SUBSCRIBERS,
+# field PID, value a JSON record (START, USER, JOB, TIME). The server is stopped by GPU --unsubscribe
+# --try-stop-server only when no subscriber is alive any more; liveness as for GPU holders (holderAlive).
+
+def getSubscribers(rs, prefix):
+	"""{PID: record} of all subscribers, alive or not."""
+	return {int(pid): json.loads(record) for pid, record in rs.hgetall("%s_SUBSCRIBERS"%(prefix)).items()}
+
+def subscribe(rs, prefix, pid):
+	record = {"TIME": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+	          "USER": os.environ.get("USER", ""), "JOB": os.environ.get("SLURM_JOB_ID", "")}
+	start = processStartTime(pid)
+	if start is not None:
+		record["START"] = start
+	rs.hset("%s_SUBSCRIBERS"%(prefix), pid, json.dumps(record))
+	rs.lpush("%s_EVENTS"%(prefix), "%s: PID %d subscribed to the pool%s."%(record["TIME"], pid, " (job %s)"%(record["JOB"]) if record["JOB"] else ""))
+
+def unsubscribe(rs, prefix, pid):
+	"""Remove a subscriber; True if it was subscribed."""
+	if not rs.hdel("%s_SUBSCRIBERS"%(prefix), pid):
+		return False
+	rs.lpush("%s_EVENTS"%(prefix), "%s: PID %d unsubscribed from the pool."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), pid))
+	return True
+
+def liveSubscribers(rs, prefix):
+	"""{PID: record} of the subscribers that are still running; subscribers that ended without --unsubscribe are
+	removed (with an event)."""
+	live = {}
+	for pid, record in getSubscribers(rs, prefix).items():
+		if holderAlive(pid, record.get("START")):
+			live[pid] = record
+		elif rs.hdel("%s_SUBSCRIBERS"%(prefix), pid):
+			rs.lpush("%s_EVENTS"%(prefix), "%s: Subscriber PID %d ended without unsubscribing, removed."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), pid))
+	return live
+
+def stopServer(port):
+	"""Stop the Redis server on the port (laupy.redis_server, messages to stderr): the server of this job's PID file
+	normally, otherwise (e.g. started by another of your jobs) your redis-server on the port."""
+	manager = RedisManager(port=port, out=lambda message: print(message, file=sys.stderr))
+	pid = pidfile_pid(manager.pidfile)
+	manager.stop(force=not (pid is not None and process_exists(pid)),
+	             force_message="Stopping Redis pool with no subscribers.")
 
 def getManagedPlatformID(rs, prefix):
 	value = rs.hget(f"{prefix}_PLATFORM", "ID")
@@ -469,6 +512,13 @@ def main_with_discovery(argv=None):
 		parser.error("--redis-manage-count must be a positive integer.")
 	if ARG.kill_unresponsive_server and not ARG.try_start_server:
 		parser.error("--kill-unresponsive-server requires --try-start-server")
+	if ARG.subscribe and not (ARG.redis_manage_all or ARG.redis_manage is not None or ARG.redis_manage_count is not None):
+		parser.error("--subscribe requires a --redis-manage* action")
+	if ARG.try_stop_server:
+		if not ARG.unsubscribe:
+			parser.error("--try-stop-server requires --unsubscribe")
+		if ARG.redis_server not in ("localhost", "127.0.0.1"):
+			parser.error("--try-stop-server requires a local loopback endpoint")
 	if ARG.try_start_server:
 		if not (ARG.redis_manage_all or ARG.redis_manage is not None or ARG.redis_manage_count is not None):
 			parser.error("--try-start-server requires a --redis-manage* action")
@@ -511,6 +561,11 @@ def main_with_discovery(argv=None):
 		db = probe_client(ARG.redis_server, ARG.redis_port, db=ARG.redis_db, decode_responses=True)
 		db.ping()
 	except (redis.ConnectionError, redis.TimeoutError) as e:
+		if ARG.unsubscribe:
+			# Nothing left to unsubscribe from: the server (and the pool with it) is gone already. That is a normal
+			# outcome at the end of a job, so no warning.
+			print("Redis server is not running; nothing to unsubscribe from.", file=sys.stderr)
+			return 0
 		# Unreachable or hung: with --try-start-server, starting the server sorts it out (or refuses, see its message)
 		log.warning(f"Can not connect to Redis server: {e}")
 		if ARG.try_start_server:
@@ -576,16 +631,34 @@ def main_with_discovery(argv=None):
 				print("Release them first (or wait until these processes end).", file=sys.stderr)
 				return 1
 		try:
-			status = initRedisObjects(rs, ARG.redis_prefix, managedList, GPUcount, managed_platform, force=ARG.force, try_start_server=ARG.try_start_server)
-			if status == -1: # Objects already initialized, add force to proceed, exit successfully.
-				return 0
-			else:
-				print(len(managedList))
-				return 0
+			count = initRedisObjects(rs, ARG.redis_prefix, managedList, GPUcount, managed_platform, force=ARG.force)
+			if count is None:
+				return 1
+			if ARG.subscribe:
+				subscribe(rs, ARG.redis_prefix, ARG.pid if ARG.pid is not None else os.getppid())
+			print(count)
+			return 0
 		except Exception as e:
 			print(f"Error: {e}", file=sys.stderr)
 			return 1
 	
+	if ARG.unsubscribe:
+		PID = ARG.pid if ARG.pid is not None else os.getppid()
+		if not unsubscribe(rs, ARG.redis_prefix, PID):
+			print("Warning: PID %d was not subscribed."%(PID), file=sys.stderr)
+		live = liveSubscribers(rs, ARG.redis_prefix)
+		if live:
+			print("Unsubscribed PID %d; %d subscriber(s) still running (PID %s), Redis keeps running."%(PID, len(live), ", ".join(str(p) for p in sorted(live))), file=sys.stderr)
+			return 0
+		print("Unsubscribed PID %d; no subscriber is running any more."%(PID), file=sys.stderr)
+		if ARG.try_stop_server:
+			try:
+				stopServer(ARG.redis_port)
+			except (RedisLifecycleError, OSError) as e:
+				log.error(f"Failed to stop Redis server: {e}")
+				return 1
+		return 0
+
 	if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)):
 		# No pool yet: the requested action is not possible. Explain on stderr and fail, so that a script capturing
 		# the output (e.g. GPUCOUNT=$(GPU --gpu-count)) gets no text and sees the error.
@@ -743,6 +816,10 @@ def main_with_discovery(argv=None):
 			print("GPU total:%d no managed"%(GPUcount))
 		else:
 			print("GPU total:%d managed:%d idle:%d"%(GPUcount, len(managed), len(idle)))
+		for pid, record in sorted(getSubscribers(rs, ARG.redis_prefix).items()):
+			state = "running" if holderAlive(pid, record.get("START")) else "not running"
+			job = ", job %s"%(record["JOB"]) if record.get("JOB") else ""
+			print("Subscriber PID %d (%s%s) since %s, %s"%(pid, record.get("USER") or "?", job, record.get("TIME", "?"), state))
 		return 0
 	
 	if ARG.redis_delete:
@@ -768,6 +845,7 @@ def main_with_discovery(argv=None):
 		rs.delete("%s_INIT"%(ARG.redis_prefix))
 		rs.delete("%s_PLATFORM"%(ARG.redis_prefix))
 		rs.delete("%s_NOHOLDER"%(ARG.redis_prefix))
+		rs.delete("%s_SUBSCRIBERS"%(ARG.redis_prefix))
 		print("All Redis objects related to GPU management were deleted.")
 		return 0
 	

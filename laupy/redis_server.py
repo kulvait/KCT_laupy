@@ -437,14 +437,15 @@ class RedisManager:
 			"Check the Redis log and port availability."
 		)
 
-	def stop(self, force=False, dump=False):
+	def stop(self, force=False, dump=False, force_message="Force stopping Redis (ignoring PID file)."):
 		"""Stop the server of the PID file (SHUTDOWN NOSAVE).
 
 		force: ignore the PID file and stop your own redis-server on the port (SIGTERM, then SIGKILL).
 		dump: first save the data to the timestamped RDB file in the log dir.
+		force_message: first line reported for a forced stop (callers can say why they stop it).
 		"""
 		if force:
-			self.out("Force stopping Redis (ignoring PID file).")
+			self.out(force_message)
 			owners = port_owners(self.port)
 			for pid, info in owners.items():
 				if is_own_redis_server(pid):
