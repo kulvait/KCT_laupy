@@ -13,6 +13,7 @@ import sys
 import threading
 import logging
 
+import psutil
 import redis
 from redis.backoff import NoBackoff
 from redis.retry import Retry
@@ -31,8 +32,9 @@ ch.setFormatter(formatter)
 log.addHandler(ch)
 log.propagate = False  # Prevent log messages from being propagated to the root logger
 
-# Seconds between checks of a waiting --get for GPUs held by processes that no longer exist (purgeWhileWaiting)
-WAIT_PURGE_INTERVAL = 30
+# Seconds between checks of a waiting --get for GPUs held by processes that no longer exist (purgeWhileWaiting).
+# Every waiting process checks, so this is kept long; a crashed holder's GPU comes back within this time.
+WAIT_PURGE_INTERVAL = 180
 
 def buildParser():
 	parser = argparse.ArgumentParser(description="GPU management through Redis server")
@@ -41,10 +43,10 @@ def buildParser():
 	parser.add_argument("--redis-port", type=int, default=6379, help="Redis server port")
 	parser.add_argument("--redis-db", type=int, default=0, help="Redis server db")
 	parser.add_argument("--redis-prefix", type=str, default="GPU", help="Prefix of Redis objects to be used for GPU management")
-	parser.add_argument("--pid", type=int, default=None, help="Use this PID to identify PID for --get and --release instead of parent PID.")
-	parser.add_argument("--force", action="store_true", help="Initialize Redis objects even if they are already initialized.")
+	parser.add_argument("--pid", type=int, default=None, help="Process that holds the GPU for --get and --release, instead of the parent process. Pass the long-running process that uses the GPU: when it ends, its GPU is returned to the pool.")
+	parser.add_argument("--force", action="store_true", help="With --redis-manage*: replace an existing pool. With --redis-delete: delete even while GPUs are in use. Replacing is refused while running processes hold GPUs.")
 	parser.add_argument("--try-start-server", action="store_true", help="Ensure local Redis exists, then initialize or reuse a matching GPU pool",)
-	parser.add_argument("--kill-unresponsive-server", action="store_true", help="With --try-start-server, permit verified owned Redis listener SIGKILL")
+	parser.add_argument("--kill-unresponsive-server", action="store_true", help="With --try-start-server: if your own redis-server holds the port but does not respond, stop it (SIGTERM, then SIGKILL) and start a new one")
 	parser.add_argument("--managed-platform-id", type=int, help="Specify the OpenCL platform ID to be managed. If not specified, the default platform will be used. Use only with --redis-manage-all, --redis-manage or --redis-manage-count.")
 	action = parser.add_mutually_exclusive_group(required=True)
 	#System information
@@ -54,8 +56,8 @@ def buildParser():
 	action.add_argument("--redis-manage-all", action="store_true", help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with all available GPU.")
 	action.add_argument("--redis-manage", type=str, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with specified GPUs provided as comma separated list.")
 	action.add_argument("--redis-manage-count", type=int, help="Initialize GPU_IDLE, GPU_MANAGED and GPU_EVENTS objects with N GPUs, where N is the number of GPUs to be managed.")
-	action.add_argument("--redis-delete", action="store_true", help="Delete all Redis objects related to GPU management.")
-	action.add_argument("--redis-purge", action="store_true", help="Remove allocations by non existent processes.")
+	action.add_argument("--redis-delete", action="store_true", help="Delete all Redis objects related to GPU management (refused while GPUs are in use, unless --force).")
+	action.add_argument("--redis-purge", action="store_true", help="Return the GPUs of holders that no longer exist (a waiting --get also does this every few minutes).")
 	action.add_argument("--redis-managed-insert", default=None, type=int, help="Insert GPU ID to managed IDs.")
 	action.add_argument("--redis-managed-delete", default=None, type=int, help="Remove GPU ID from managed IDs.")
 	#GPU management and database information
@@ -161,6 +163,31 @@ def checkPID(PID):
 		return False
 	return True
 
+def processStartTime(pid):
+	"""Start time of a process (seconds since the epoch), or None if it can not be read."""
+	try:
+		return psutil.Process(pid).create_time()
+	except (psutil.Error, OSError):
+		return None
+
+def holderAlive(pid, start=None):
+	"""True while the process holding a GPU still runs.
+
+	start is the holder's start time recorded at --get: after the holder ended, the kernel may give its PID to an
+	unrelated process, which then has another start time and does not count. Without a recorded start time, or when
+	it can not be read, the PID alone decides (checkPID: processes of other users count as running).
+	"""
+	if not checkPID(pid):
+		return False
+	if start is None:
+		return True
+	try:
+		return abs(psutil.Process(pid).create_time() - float(start)) < 1.0
+	except psutil.NoSuchProcess:
+		return False
+	except (psutil.Error, OSError, ValueError):
+		return True
+
 # Atomic pool operations.
 # Several processes use the pool at the same time (gets, releases, purges, a second job setting up the pool).
 # Whenever a step first checks the state ("is the GPU idle?", "does the pool exist?") and then changes it, another
@@ -189,6 +216,17 @@ def returnGPU(rs, prefix, gpu_id, expected_pid=None):
 	script = rs.register_script(RETURN_GPU_SCRIPT)
 	return int(script(keys=["%s_IDLE"%(prefix), "%s_GPU%d"%(prefix, int(gpu_id))],
 	                  args=[int(gpu_id), "" if expected_pid is None else str(expected_pid)]))
+
+# Add a GPU to the pool unless it is managed already (two simultaneous inserts must not add it twice).
+#   KEYS[1]: managed list, KEYS[2]: idle list; ARGV[1]: GPU ID. Returns 1 if added, 0 if already managed.
+INSERT_GPU_SCRIPT = """
+for _, id in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
+	if id == ARGV[1] then return 0 end
+end
+redis.call('LPUSH', KEYS[1], ARGV[1])
+redis.call('LPUSH', KEYS[2], ARGV[1])
+return 1
+"""
 
 # Create the pool in one step unless it exists (or replace it with force), so that two jobs setting up the pool at the
 # same moment can not both fill it.
@@ -235,8 +273,12 @@ def initRedisObjects(rs, prefix, managedList, GPUcount, managedPlatform, force=F
 		if sorted(existing_managed_list) != sorted(managedList):
 			print("Error: Existing managed GPU list (%s) does not match requested managed GPU list (%s). Use --force to reinitialize." % (existing_managed_list, managedList), file=sys.stderr)
 			return -1
-		if managedPlatform["id"] != int(rs.hget("%s_PLATFORM"%(prefix), "ID")):
-			print("Error: Existing managed platform ID (%d) does not match requested managed platform ID (%d). Use --force to reinitialize." % (int(rs.hget("%s_PLATFORM"%(prefix), "ID")), managedPlatform["id"]), file=sys.stderr)
+		existing_platform_id = rs.hget("%s_PLATFORM"%(prefix), "ID")
+		if existing_platform_id is None:
+			print("Error: The existing pool has no platform record (left by an older version?). Replace it with --force.", file=sys.stderr)
+			return -1
+		if managedPlatform["id"] != int(existing_platform_id):
+			print("Error: Existing managed platform ID (%d) does not match requested managed platform ID (%d). Use --force to reinitialize." % (int(existing_platform_id), managedPlatform["id"]), file=sys.stderr)
 			return -1
 		# If all checks pass, purge the existing data without reinitializing, since the server was just started and the data is consistent.
 		purgeNonexistentProcesses(rs, prefix)
@@ -313,17 +355,14 @@ def insertGPU(rs, prefix, GPUID):
 	if GPUID not in valid_ids:
 		print("GPU ID %d is not present on managed platform. Valid IDs: %s"  % (GPUID, ",".join(str(i) for i in sorted(valid_ids))), file=sys.stderr)
 		return 1
-	managed = getManagedGPUs(rs, prefix)
-	if GPUID in managed:
+	script = rs.register_script(INSERT_GPU_SCRIPT)
+	if not int(script(keys=["%s_MANAGED"%(prefix), "%s_IDLE"%(prefix)], args=[int(GPUID)])):
 		print("GPU %d is already managed."%(GPUID), file=sys.stderr)
 		return 1
-	else:
-		msg = "%s: GPU %d is now managed."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), GPUID)
-		rs.lpush("%s_EVENTS"%(prefix), msg)
-		rs.lpush("%s_MANAGED"%(prefix), GPUID)
-		rs.lpush("%s_IDLE"%(prefix), GPUID)
-		print(msg)
-		return 0
+	msg = "%s: GPU %d is now managed."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), GPUID)
+	rs.lpush("%s_EVENTS"%(prefix), msg)
+	print(msg)
+	return 0
 
 def removeGPU(rs, prefix, GPUID):
 	managed = getManagedGPUs(rs, prefix)
@@ -341,14 +380,23 @@ def removeGPU(rs, prefix, GPUID):
 def purgeNonexistentProcesses(rs, prefix):
 	activeList = getActiveGPUs(rs, prefix)
 	for i in activeList:
-		PID = rs.hget("%s_GPU%d"%(prefix, int(i)), "PID")
-		if PID is not None:
-			PID = int(PID)
+		record = rs.hgetall("%s_GPU%d"%(prefix, int(i)))
+		if record.get("PID") is not None:
+			PID = int(record["PID"])
 			# Returned only while the dead PID still holds it: another purge may have returned it meanwhile, and a
 			# --get may already have handed it to a new holder
-			if not checkPID(PID) and returnGPU(rs, prefix, i, expected_pid=PID) == 1:
+			if not holderAlive(PID, record.get("START")) and returnGPU(rs, prefix, i, expected_pid=PID) == 1:
 				LOG = "%s: GPU %s acquired by process with PID %d, was released by redis purge as the process with given PID does no longer exist."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i, PID)
 				rs.lpush("%s_EVENTS"%(prefix), LOG)
+
+def liveHolders(rs, prefix):
+	"""[(GPU ID, PID, TIME)] of active GPUs whose recorded holder process is still running."""
+	holders = []
+	for i in getActiveGPUs(rs, prefix):
+		record = rs.hgetall("%s_GPU%d"%(prefix, int(i)))
+		if record.get("PID") is not None and holderAlive(int(record["PID"]), record.get("START")):
+			holders.append((i, int(record["PID"]), record.get("TIME", "?")))
+	return holders
 
 def purgeWhileWaiting(make_client, prefix, stop):
 	"""Watcher thread of a waiting --get: every WAIT_PURGE_INTERVAL seconds, return the GPUs of holders that no
@@ -409,10 +457,9 @@ def main_with_discovery(argv=None):
 			return 0
 		except DiscoveryError as e:
 			print(f"Error: {e}", file=sys.stderr)
-			return -1
+			return 1
 	
 	rs = redis.Redis(host=ARG.redis_server, port=ARG.redis_port, db=ARG.redis_db, socket_connect_timeout=10, socket_timeout=None, decode_responses=True) #GPU acquisition might wait for a long time, so we set socket_timeout to None to avoid timeout errors
-	STARTED_SERVER = False
 	try:
 		# Quick check, if it fails we may try to start the server. A hung server accepts the connection but
 		# never answers, so the reply is limited to 3 s; retries are off because redis-py >= 6 retries
@@ -434,23 +481,22 @@ def main_with_discovery(argv=None):
 				# carries only results that scripts capture (e.g. N=$(GPU --redis-manage-all --try-start-server)
 				# must get just the GPU count), so the REDIS output goes to stderr, where the user still sees it.
 				subprocess.run(CMD, check=True, stdout=sys.stderr)
-				rs.ping()
-				STARTED_SERVER = True
+				db.ping()	# Quick-check client: a server hanging right after start can not block us
 				log.info("Redis server started successfully.")
 			except subprocess.CalledProcessError as e:
 				log.error(f"Failed to start Redis server: {e}")
-				return -1
-			except redis.ConnectionError:
+				return 1
+			except (redis.ConnectionError, redis.TimeoutError):
 				log.error("Redis server did not respond after starting.")
-				return -1
+				return 1
 		else:
 			print("Can not connect to Redis server, try to start server first.", file=sys.stderr)
-			return -1
+			return 1
 	
 	# Redis management setup --redis-manage-all, --redis-manage or --redis-manage-count
 	if ARG.redis_manage_all or ARG.redis_manage is not None or ARG.redis_manage_count is not None:
 		platforms = getOpenCLPlatforms()
-		managed_platform_id = ARG.managed_platform_id if ARG.managed_platform_id is not None else getDefaultPlatformID()
+		managed_platform_id = ARG.managed_platform_id if ARG.managed_platform_id is not None else getDefaultPlatformID(platforms)
 		managed_platform = getPlatformByID(platforms, managed_platform_id)
 		platform_device_ids = getPlatformDeviceIDs(managed_platform)
 		GPUcount = len(platform_device_ids)
@@ -463,21 +509,31 @@ def main_with_discovery(argv=None):
 				managedList = [int(i) for i in raw]
 			except ValueError:
 				print("Invalid --redis-manage list. Use comma-separated integers, e.g. 0,1,3", file=sys.stderr)
-				return -1
+				return 1
 			managedList = sorted(set(managedList))
 			if len(managedList) == 0:
 				print("No valid GPU IDs provided in --redis-manage list.", file=sys.stderr)
-				return -1
+				return 1
 			valid_ids = set(platform_device_ids)
 			out_of_range = [i for i in managedList if i not in valid_ids]
 			if out_of_range:
 				print(f"GPU IDs {out_of_range} are not present on managed platform {managed_platform_id}. Valid IDs: {platform_device_ids}", file=sys.stderr)
-				return -1
+				return 1
 		elif ARG.redis_manage_count is not None:
 			if ARG.redis_manage_count <= 0 or ARG.redis_manage_count > GPUcount:
 				print("Can not manage more GPUs than available or less than 1 but you requested %d out of %d possible!"%(ARG.redis_manage_count, GPUcount), file=sys.stderr)
-				return -1
+				return 1
 			managedList = list(reversed(platform_device_ids))[:ARG.redis_manage_count]
+		if ARG.force and rs.exists("%s_INIT"%(ARG.redis_prefix)):
+			# Replacing the pool puts every GPU back to the idle list. A GPU still in use would then be handed out a
+			# second time, so --force is refused while running processes hold GPUs.
+			holders = liveHolders(rs, ARG.redis_prefix)
+			if holders:
+				print("Refusing to replace the GPU pool with --force while GPUs are in use:", file=sys.stderr)
+				for gpu, pid, since in holders:
+					print("  GPU %d held by running PID %d since %s"%(gpu, pid, since), file=sys.stderr)
+				print("Release them first (or wait until these processes end).", file=sys.stderr)
+				return 1
 		try:
 			status = initRedisObjects(rs, ARG.redis_prefix, managedList, GPUcount, managed_platform, force=ARG.force, try_start_server=ARG.try_start_server)
 			if status == -1: # Objects already initialized, add force to proceed, exit successfully.
@@ -487,9 +543,9 @@ def main_with_discovery(argv=None):
 				return 0
 		except Exception as e:
 			print(f"Error: {e}", file=sys.stderr)
-			return -1
+			return 1
 	
-	if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)) and ARG.platform_list is False and ARG.default_platform_id is False:
+	if not rs.exists("%s_PLATFORM"%(ARG.redis_prefix)):
 		# No pool yet: the requested action is not possible. Explain on stderr and fail, so that a script capturing
 		# the output (e.g. GPUCOUNT=$(GPU --gpu-count)) gets no text and sees the error.
 		print("Not managing any platform, set Redis objects first by running --redis-manage-all, --redis-manage or --redis-manage-count, you can also use --managed-platform-id to specify the platform ID to be managed or use --default-platform-id to get a suggestion for the platform ID to be managed.", file=sys.stderr)
@@ -498,7 +554,7 @@ def main_with_discovery(argv=None):
 			if all(p["devices"] == [] for p in platforms):
 				print("Redis not initialized, no OpenCL platforms with devices found.", file=sys.stderr)
 				return 1
-			default_platform_id = getDefaultPlatformID()
+			default_platform_id = getDefaultPlatformID(platforms)
 			default_platform = getPlatformByID(platforms, default_platform_id)
 			if default_platform is not None:
 				GPUcount = len(default_platform["devices"])
@@ -507,9 +563,8 @@ def main_with_discovery(argv=None):
 				print("Redis not initialized, default platform ID %d not found."%(default_platform_id), file=sys.stderr)
 			return 1
 		except DiscoveryError:
-				print("Redis not initialized, discovery of OpenCL platforms failed, no OpenCL platforms found.", file=sys.stderr)
-				return -1
-		return -1
+			print("Redis not initialized, discovery of OpenCL platforms failed, no OpenCL platforms found.", file=sys.stderr)
+			return 1
 	
 	if ARG.redis_managed_insert is not None:
 		return insertGPU(rs, ARG.redis_prefix, ARG.redis_managed_insert)
@@ -526,7 +581,7 @@ def main_with_discovery(argv=None):
 			return 0
 		except DiscoveryError as e:
 			print(f"Error: {e}", file=sys.stderr)
-			return -1
+			return 1
 
 	if ARG.gpu_count:
 		# Read the managed platform ID from Redis
@@ -536,7 +591,7 @@ def main_with_discovery(argv=None):
 			return 0
 		except DiscoveryError as e:
 			print(f"Error: {e}", file=sys.stderr)
-			return -1
+			return 1
 
 	if ARG.managed_gpu_count:
 		devCount = len(rs.lrange("%s_MANAGED"%(ARG.redis_prefix), 0, -1))
@@ -559,14 +614,27 @@ def main_with_discovery(argv=None):
 		watcher.start()
 		try:
 			while True:
-				GPUID = rs.brpop("%s_IDLE"%(ARG.redis_prefix), 0)
+				try:
+					GPUID = rs.brpop("%s_IDLE"%(ARG.redis_prefix), 0)
+				except (redis.ConnectionError, redis.TimeoutError) as e:
+					# E.g. the job that started the server ended, or REDIS stop: no GPU will come any more
+					print("Redis server went away while waiting for a GPU: %s"%(e), file=sys.stderr)
+					return 1
 				ID = int(GPUID[1])
 				managedList = getManagedGPUs(rs, ARG.redis_prefix)
 				if ID in managedList:
 					LOG = "%s: GPU %s acquired by PID %d."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ID, PID)
 					rs.lpush("%s_EVENTS"%(ARG.redis_prefix), LOG)
-					rs.hset("%s_GPU%d"%(ARG.redis_prefix, int(ID)), "PID", PID)
-					rs.hset("%s_GPU%d"%(ARG.redis_prefix, int(ID)), "TIME", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+					# New holder record in one transaction: no fields of an earlier holder remain (an old START would
+					# make the new holder look dead), and PID, TIME and START appear together
+					record = {"PID": PID, "TIME": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+					start = processStartTime(PID)
+					if start is not None:
+						record["START"] = start
+					transaction = rs.pipeline(transaction=True)
+					transaction.delete("%s_GPU%d"%(ARG.redis_prefix, int(ID)))
+					transaction.hset("%s_GPU%d"%(ARG.redis_prefix, int(ID)), mapping=record)
+					transaction.execute()
 					print(ID)
 					break
 		finally:
@@ -580,6 +648,12 @@ def main_with_discovery(argv=None):
 		else:
 			PID = os.getppid()
 		if ID not in getManagedGPUs(rs, ARG.redis_prefix):
+			# Removed from the pool (--redis-managed-delete) while it was held: forget the holder, do not return it
+			if rs.delete("%s_GPU%d"%(ARG.redis_prefix, ID)):
+				LOG = "%s: GPU %d released by PID %d; it is no longer managed, so not returned to the pool."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ID, PID)
+				rs.lpush("%s_EVENTS"%(ARG.redis_prefix), LOG)
+				print("GPU %d released (no longer managed, not returned to the pool)."%(ID))
+				return 0
 			print("GPU %d is not managed."%(ID), file=sys.stderr)
 			return 1
 		# Check "not idle" and return it in one atomic step; only for the holder seen now, so that a GPU released and
@@ -593,7 +667,12 @@ def main_with_discovery(argv=None):
 			print("GPU %d was released and taken by another process meanwhile; not released."%(ID), file=sys.stderr)
 			return 1
 		TIME = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-		LOG = "%s: GPU %d released by PID %d."%(TIME, ID, PID)
+		if holder_pid is not None and holder_pid != str(PID):
+			# Allowed (cooperative pool), but worth seeing: a wrong ID or --pid in a script frees a GPU still in use
+			LOG = "%s: GPU %d held by PID %s released by another PID %d."%(TIME, ID, holder_pid, PID)
+			print("Warning: GPU %d was held by PID %s, released by PID %d."%(ID, holder_pid, PID), file=sys.stderr)
+		else:
+			LOG = "%s: GPU %d released by PID %d."%(TIME, ID, PID)
 		rs.lpush("%s_EVENTS"%(ARG.redis_prefix), LOG)
 		print("GPU %d released."%(ARG.release))
 		return 0
@@ -626,6 +705,13 @@ def main_with_discovery(argv=None):
 		return 0
 	
 	if ARG.redis_delete:
+		holders = liveHolders(rs, ARG.redis_prefix)
+		if holders and not ARG.force:
+			# Their --release would fail and processes waiting for a GPU would wait for a pool that is gone
+			print("Refusing to delete the GPU pool while GPUs are in use (use --force to delete anyway):", file=sys.stderr)
+			for gpu, pid, since in holders:
+				print("  GPU %d held by running PID %d since %s"%(gpu, pid, since), file=sys.stderr)
+			return 1
 		managed = rs.lrange("%s_MANAGED"%(ARG.redis_prefix), 0, -1)
 		if len(managed) > 0:
 			print("Redis objects related to %d GPUs management will be deleted."%(len(managed)))
@@ -651,11 +737,11 @@ def main_with_discovery(argv=None):
 		else:
 			print("There is %d ACTIVE GPUs, IDs: %s"%(len(active), ", ".join([str(i) for i in active])))
 		for i in active:
-			PID = rs.hget("%s_GPU%d"%(ARG.redis_prefix, int(i)), "PID")
-			TIME = rs.hget("%s_GPU%d"%(ARG.redis_prefix, int(i)), "TIME")
+			record = rs.hgetall("%s_GPU%d"%(ARG.redis_prefix, int(i)))
+			PID, TIME = record.get("PID"), record.get("TIME")
 			if TIME is not None and PID is not None:
 				PID = int(PID)
-				if checkPID(PID):
+				if holderAlive(PID, record.get("START")):
 					print(colored("GPU %d acquired by running PID %6d at %s"%(i, PID, TIME), "green"))
 				else:
 					print(colored("GPU %d acquired by not running PID %6d at %s"%(i, PID, TIME), "red"))
@@ -669,7 +755,7 @@ def main(argv=None):
 		return main_with_discovery(argv)
 	except DiscoveryError as e:
 		print(f"Error: {e}", file=sys.stderr)
-		return -1
+		return 1
 
 if __name__ == "__main__":
 	sys.exit(main())
