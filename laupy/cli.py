@@ -8,7 +8,7 @@ import shlex
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Mapping
+from typing import Dict, List, Mapping, Sequence, Tuple
 
 from laupy.flow import list_processing_unit_subdirs
 
@@ -207,7 +207,7 @@ class SubmissionEnvironment:
     vanilla: the environment of this process is not propagated (--export
         without ALL): a job gets only SLURM_* and the variables listed
         explicitly, the `base` ones (see vanilla_base_variables()) followed
-        by the per-job ones (submitslurm --vanilla).
+        by the per-job ones (submitslurm --vanilla, --vanilla-strict).
     """
     global_env: Dict[str, str] = field(default_factory=lambda: dict(os.environ))
     extra: Dict[str, str] = field(default_factory=dict)
@@ -230,11 +230,39 @@ class SubmissionEnvironment:
 
     def global_lines(self) -> List[str]:
         if self.vanilla:
-            return ["GLOBAL ENV: not propagated to the jobs (--vanilla); they get only the listed variables"]
+            return ["GLOBAL ENV: not propagated to the jobs (--vanilla/--vanilla-strict); they get only the listed variables"]
         return ["GLOBAL ENV (inherited by every job via --export=ALL):"] + environment_lines(self.global_env)
 
 
 VANILLA_SYSTEM_PATH = ["/usr/local/bin", "/usr/bin", "/bin"]
+
+# Commands whose directories a --vanilla job keeps on its PATH: the directory of the first
+# occurrence of each on the submitting PATH (group laupy bin with initEnv and initPython,
+# syscripts, KCT binaries). Not used with --vanilla-strict.
+VANILLA_PATH_COMMANDS = ("initEnv", "rawTiffStructureToZarr.py", "kct-pb2d-krylov")
+
+
+def vanilla_kept_directories(global_env: Mapping[str, str] = None,
+                             commands: Sequence[str] = VANILLA_PATH_COMMANDS) -> Tuple[Dict[str, List[str]], List[str]]:
+    """Directories of the submitting PATH kept on the PATH of a --vanilla job.
+
+    For each of `commands`, the directory of its first occurrence on the PATH of global_env.
+    Returns ({directory: [commands found there]} in the order of the submitting PATH,
+    [commands not found]).
+    """
+    import shutil
+    path_value = (global_env if global_env is not None else os.environ).get("PATH", "")
+    found: Dict[str, List[str]] = {}
+    missing: List[str] = []
+    for command in commands:
+        executable = shutil.which(command, path=path_value)
+        if executable:
+            found.setdefault(os.path.dirname(os.path.abspath(executable)), []).append(command)
+        else:
+            missing.append(command)
+    order = {os.path.abspath(d): i for i, d in reversed(list(enumerate(d for d in path_value.split(os.pathsep) if d)))}
+    kept = dict(sorted(found.items(), key=lambda item: order.get(item[0], len(order))))
+    return kept, missing
 
 
 def parse_job_path(value: str) -> List[str]:
@@ -285,22 +313,21 @@ def job_path_variable(job_path: List[str], global_env: Mapping[str, str] = None,
     return os.pathsep.join(dict.fromkeys(list(leading) + list(job_path) + inherited))
 
 
-def vanilla_base_variables(root, sbatch_dir, global_env: Mapping[str, str] = None, job_path: List[str] = None) -> Dict[str, str]:
+def vanilla_base_variables(root, sbatch_dir, global_env: Mapping[str, str] = None, job_path: List[str] = None,
+                           strict: bool = False, commands: Sequence[str] = VANILLA_PATH_COMMANDS) -> Dict[str, str]:
     """Variables a --vanilla job gets besides the per-job ones.
 
     PATH: root/bin, root/script, the SLURM script directory, the job_path directories (--job-path), the
-    directory of initGanrec (looked up on the PATH of global_env, so the recipes can
-    `source initGanrec`) and the system directories.
+    directories of `commands` on the PATH of global_env (vanilla_kept_directories(); not with
+    strict, --vanilla-strict) and the system directories.
     HOME, USER, LOGNAME: from the password database of the submitting user (if the UID has no
     entry, from Path.home() and getpass.getuser()).
     Raises ValueError if a value contains a comma (the --export separator).
     """
     import pwd
-    import shutil
     path = workspace_path_directories(root, sbatch_dir) + list(job_path or [])
-    init_ganrec = shutil.which("initGanrec", path=(global_env if global_env is not None else os.environ).get("PATH", ""))
-    if init_ganrec:
-        path.append(os.path.dirname(os.path.abspath(init_ganrec)))
+    if not strict:
+        path += list(vanilla_kept_directories(global_env, commands)[0])
     path += VANILLA_SYSTEM_PATH
     try:
         account = pwd.getpwuid(os.getuid())

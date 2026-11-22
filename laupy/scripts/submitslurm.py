@@ -5,9 +5,8 @@ import sys
 import time
 from laupy import maxwell
 import shlex
-import shutil
 import logging
-from laupy.cli import LAUPY_PYTHON, join_dash_values, SubmissionEnvironment, job_path_variable, prepend_path_directories, workspace_path_directories, vanilla_base_variables, check_python_environment, apply_node_source_arguments, print_node_notes, print_arguments, resolve_directory_tree
+from laupy.cli import LAUPY_PYTHON, join_dash_values, SubmissionEnvironment, job_path_variable, prepend_path_directories, workspace_path_directories, vanilla_base_variables, vanilla_kept_directories, check_python_environment, apply_node_source_arguments, print_node_notes, print_arguments, resolve_directory_tree
 from laupy.submitslurm_options import build_parser
 from laupy.pipeline_entries import PipelineEntriesStore, select_pipeline_entries, retire_pipeline_entries, cancel_pipeline_entries
 from laupy.flow import SchedulingError, clean_pipeline_entries, remove_pipeline_dir, schedule_slurm_job
@@ -82,6 +81,8 @@ def main():
     # -a "--bin 2 ..." / --env A=-x: values starting with "-" are joined to their option first
     ARG = parser.parse_args(join_dash_values(sys.argv[1:]))
     print(f"submitslurm with parameters: {quote_command(sys.argv[1:])}")
+    # --vanilla-strict is --vanilla without directories of the submitting PATH
+    ARG.vanilla = ARG.vanilla or ARG.vanilla_strict
     # Environment of the jobs: inherited global environment + per-job variables
     ENVIRONMENT = SubmissionEnvironment(extra=dict(ARG.env), vanilla=ARG.vanilla)
     # Python environment of the jobs (LAUPY_PYTHON): --python, else --env LAUPY_PYTHON=..., else the submitting shell
@@ -117,15 +118,17 @@ def main():
     directory_tree = resolve_directory_tree(ARG)
     if ARG.vanilla:
         try:
-            ENVIRONMENT.base = vanilla_base_variables(directory_tree.root, directory_tree.sbatch_abs, ENVIRONMENT.global_env, ARG.job_path)
+            ENVIRONMENT.base = vanilla_base_variables(directory_tree.root, directory_tree.sbatch_abs, ENVIRONMENT.global_env, ARG.job_path, strict=ARG.vanilla_strict)
         except ValueError as e:
             parser.error(f"--vanilla: {e}")
-        print("Vanilla submission: the submitting environment is not propagated; every job gets only SLURM_* and")
+        print(("Strict vanilla" if ARG.vanilla_strict else "Vanilla") + " submission: the submitting environment is not propagated; every job gets only SLURM_* and")
         for name, value in ENVIRONMENT.base.items():
             print(f"    {name}={value}")
         print("    plus PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME, LD_PRELOAD=" + (", " + ", ".join(ENVIRONMENT.extra) if ENVIRONMENT.extra else ""))
-        if not shutil.which("initGanrec", path=ENVIRONMENT.base["PATH"]):
-            print("    WARNING: initGanrec is not on this PATH; recipes that source it will fail", file=sys.stderr)
+        if not ARG.vanilla_strict:
+            missing = vanilla_kept_directories(ENVIRONMENT.global_env)[1]
+            if missing:
+                print("    WARNING: not on the submitting PATH, so their directories are not on the job PATH: " + ", ".join(missing), file=sys.stderr)
     # ROOT/bin (initPython, reconstructSlice2D, ...), ROOT/script and the SLURM script directory always lead the job PATH
     leading = workspace_path_directories(directory_tree.root, directory_tree.sbatch_abs)
     try:

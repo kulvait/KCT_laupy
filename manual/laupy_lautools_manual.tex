@@ -646,9 +646,9 @@ what it adds is shown in the row (hover for the exact options). Its tabs:
     \cmd{bin/python}; a \cmd{-{}-python} in the call always wins over a default.
   \item \ui{Free text}: further arguments added to every call (shell quoting).
   \item \ui{Job environment}: what a job would get, computed as \cmd{submitslurm} does: whether it
-    inherits the console environment or is \cmd{-{}-vanilla}, the \cmd{PATH} directory by directory
-    with its source (\cmd{ROOT/bin}, \cmd{ROOT/script}, SLURM script directory, \cmd{-{}-job-path}, \cmd{initGanrec},
-    system, inherited; missing directories in red), the variables with their source, and the
+    inherits the console environment or is \cmd{-{}-vanilla}/\cmd{-{}-vanilla-strict}, the \cmd{PATH} directory by directory
+    with its source (\cmd{ROOT/bin}, \cmd{ROOT/script}, SLURM script directory, \cmd{-{}-job-path}, submitting \cmd{PATH}
+    with the commands found there, system, inherited; missing directories in red), the variables with their source, and the
     resulting \cmd{-{}-export}. The \cmd{PATH} can be edited (add, remove, reorder, edit); it is
     then exported as \cmd{-{}-env PATH=\ldots} instead of \cmd{-{}-job-path} until
     \ui{Reset to computed}. Variable values can be changed and variables added; they are passed as
@@ -843,6 +843,7 @@ Option & Meaning \\
 \cmd{-t, -{}-delaytime S} & Wait S seconds between submissions. \\
 \cmd{-{}-job-path DIR[:DIR\ldots]} & Directories for the PATH of the jobs, after \cmd{ROOT/bin}, \cmd{ROOT/script} and the SLURM script directory, which always lead it (see \emph{Environment of the jobs}). \\
 \cmd{-{}-vanilla} & Do not propagate the submitting environment; export only explicit variables (see \emph{Environment of the jobs}). \\
+\cmd{-{}-vanilla-strict} & \cmd{-{}-vanilla} without directories of the submitting \cmd{PATH}. \\
 \cmd{-{}-python PATH} & Python (Conda/Mamba) environment of the jobs, exported as \cmd{LAUPY\_PYTHON} and recorded in the entries (see \emph{Environment of the jobs}). \\
 \cmd{-{}-env NAME=VALUE} & Extra environment variable for every job (repeatable; no commas in VALUE). \\
 \cmd{-{}-pipeline-step NODE} & DAG node: a step number, a name, or \cmd{-1} (default, outside the DAG). \\
@@ -882,14 +883,14 @@ environment, and so on. On top of it, every job gets
   \item any \cmd{-{}-env} variables, which may override the three above;
   \item \cmd{LAUPY\_PYTHON}, if a Python environment is chosen (below).
 \end{itemize}
-\cmd{LAUPY\_PYTHON} is the path of a Conda/Mamba environment; \cmd{initGanrec} activates it instead of
-its default environment. \cmd{submitslurm} takes it from \cmd{-{}-python PATH}, else from
+\cmd{LAUPY\_PYTHON} is the path of a Conda/Mamba environment; \cmd{initPython} (and \cmd{initEnv}) activate it
+instead of their default environment. \cmd{submitslurm} takes it from \cmd{-{}-python PATH}, else from
 \cmd{-{}-env LAUPY\_PYTHON=PATH}, else from \cmd{LAUPY\_PYTHON} of the submitting shell. \cmd{-{}-python}
 always wins: a different \cmd{-{}-env LAUPY\_PYTHON} only gives a warning. The path must be a
 directory with an executable \cmd{bin/python} and is made absolute. It is then exported explicitly
 to every job and recorded in the pipeline entry (\cmd{laupy\_python}), so a resubmission, e.g.\
 from \cmd{lautools}, uses the same environment whatever the resubmitting process has set. Without
-it, jobs use the default environment of \cmd{initGanrec}, and so do their resubmissions.
+it, jobs use the default environment of \cmd{initPython}, and so do their resubmissions.
 \begin{lstlisting}
 $ submitslurm --python ~/.conda/envs/test --pipeline-step 5 05reconstructCGLS.sbatch
 \end{lstlisting}
@@ -900,17 +901,22 @@ scripts run in the pipeline tab and of resubmissions, so there only \cmd{-{}-pyt
 \cmd{-{}-vanilla} isolates the jobs from the user environment: \cmd{-{}-export} lists the variables
 without \cmd{ALL}, so a job gets only \cmd{SLURM\_*} and these explicit variables:
 \begin{itemize}
-  \item \cmd{PATH}: \cmd{ROOT/bin}, \cmd{ROOT/script}, the SLURM script directory (\cmd{-{}-slurm-dir}), the directory of
-    \cmd{initGanrec} as found on the submitting \cmd{PATH} (so the recipes can \cmd{source initGanrec};
-    a warning is printed if it is not found) and \cmd{/usr/local/bin:/usr/bin:/bin};
+  \item \cmd{PATH}: \cmd{ROOT/bin}, \cmd{ROOT/script}, the SLURM script directory (\cmd{-{}-slurm-dir}),
+    the \cmd{-{}-job-path} directories, the directories of the submitting \cmd{PATH} where the first
+    occurrence of \cmd{initEnv} (laupy \cmd{bin}), \cmd{rawTiffStructureToZarr.py} (syscripts) and
+    \cmd{kct-pb2d-krylov} (KCT binaries) is found, in the order of the submitting \cmd{PATH} (a warning
+    names those not found), and \cmd{/usr/local/bin:/usr/bin:/bin};
   \item \cmd{HOME}, \cmd{USER}, \cmd{LOGNAME} of the submitting user;
   \item \cmd{PIPELINE\_SCRIPTNAME}, \cmd{PIPELINE\_JOBNAME}, \cmd{LD\_PRELOAD=} as usual;
   \item \cmd{-{}-env} variables and \cmd{LAUPY\_PYTHON} from \cmd{-{}-python} (or
     \cmd{-{}-env LAUPY\_PYTHON=}); \cmd{LAUPY\_PYTHON} of the submitting shell is not used.
 \end{itemize}
-The job sets up everything else itself (\cmd{source initGanrec}). The list is printed at submission
+The job sets up everything else itself (\cmd{source initPython}). The list is printed at submission
 and stored in \cmd{slurm\_command}, so a resubmission gets the same. Use it to test submissions
-independently of the user environment.
+independently of the user environment. The commands are the list \cmd{VANILLA\_PATH\_COMMANDS} in
+\cmd{laupy/cli.py}. \cmd{-{}-vanilla-strict} keeps no directory of the submitting \cmd{PATH}: the job
+\cmd{PATH} is \cmd{ROOT/bin}, \cmd{ROOT/script}, the SLURM script directory, \cmd{-{}-job-path} (or
+\cmd{-{}-env PATH}) and the system directories only.
 
 \cmd{ROOT/bin} (with \cmd{initPython}, \cmd{reconstructSlice2D}, \ldots), \cmd{ROOT/script} (the
 recipe scripts, e.g.\ \cmd{02destar}) and the SLURM script directory always lead the \cmd{PATH} of
@@ -920,9 +926,15 @@ explicitly as \cmd{ROOT/bin}, \cmd{ROOT/script}, the SLURM script directory, the
 directories containing a comma are left out with a warning). So a recipe finds
 \cmd{source initPython} even if the submitting shell does not have \cmd{ROOT/bin} on its \cmd{PATH}.
 
+The job scripts set up Python with \cmd{source initPython}, GPU scripts with
+\cmd{source initPython --module cuda/11.8}. A recipe keeps a copy of the \cmd{initPython} of the
+laupy deployment in its \cmd{bin/}: it loads the modules \cmd{maxwell} and \cmd{mamba/3.13} plus the
+\cmd{-{}-module} ones and activates \cmd{\$LAUPY\_PYTHON} if set, else the shared Lau environment,
+using \cmd{initEnv}. It can be adapted if a recipe needs another setup.
+
 \cmd{-{}-job-path DIR[:DIR\ldots]} adds directories the jobs find their programs in, right after
-\cmd{ROOT/bin}, \cmd{ROOT/script} and the SLURM script directory: with \cmd{-{}-vanilla} before the \cmd{initGanrec}
-directory and the system ones, without it before the inherited \cmd{PATH}. Missing directories give
+\cmd{ROOT/bin}, \cmd{ROOT/script} and the SLURM script directory: with \cmd{-{}-vanilla} before the directories
+kept from the submitting \cmd{PATH} and the system ones, without it before the inherited \cmd{PATH}. Missing directories give
 a warning. \cmd{-{}-env PATH=\ldots} replaces the computed \cmd{PATH}, but \cmd{ROOT/bin},
 \cmd{ROOT/script} and the SLURM script directory are still put first; together with \cmd{-{}-job-path} it is an error. \cmd{lautools} passes the
 directories of the project PATH settings here by default (see \emph{submitslurm context}).

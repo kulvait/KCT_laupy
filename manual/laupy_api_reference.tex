@@ -691,16 +691,23 @@ per-job variables (\cmd{submitslurm -{}-env}).
   \item[global\_lines() -> list[str]] \cmd{CONDA\_PREFIX} and \cmd{PATH} of \cmd{global\_env} for
     display, see \cmd{environment\_lines()}.
 \end{description}
-With \cmd{vanilla=True} (\cmd{submitslurm -{}-vanilla}), \cmd{global\_env} is not propagated:
+With \cmd{vanilla=True} (\cmd{submitslurm -{}-vanilla} or \cmd{-{}-vanilla-strict}), \cmd{global\_env} is not propagated:
 \cmd{export\_option()} lists the variables without \cmd{ALL}, and \cmd{job\_vars()} starts with the
 \cmd{base} variables (field \cmd{base}, a dict; set it from \cmd{vanilla\_base\_variables()}) before
 the usual ones. \cmd{export\_option()} is an instance method.
 
-\api{vanilla\_base\_variables(root, sbatch\_dir, global\_env=None, job\_path=None) -> dict}
-\cmd{PATH} (\cmd{root/bin}, \cmd{root/script}, \cmd{sbatch\_dir}, the \cmd{job\_path} directories, the directory of \cmd{initGanrec} found on the \cmd{PATH}
-of \cmd{global\_env} or \cmd{os.environ}, \cmd{VANILLA\_SYSTEM\_PATH}), \cmd{HOME}, \cmd{USER},
+\api{vanilla\_base\_variables(root, sbatch\_dir, global\_env=None, job\_path=None, strict=False, commands=VANILLA\_PATH\_COMMANDS) -> dict}
+\cmd{PATH} (\cmd{root/bin}, \cmd{root/script}, \cmd{sbatch\_dir}, the \cmd{job\_path} directories, the
+directories of \cmd{vanilla\_kept\_directories(global\_env, commands)} unless \cmd{strict}
+(\cmd{-{}-vanilla-strict}), \cmd{VANILLA\_SYSTEM\_PATH}), \cmd{HOME}, \cmd{USER},
 \cmd{LOGNAME} (password database; \cmd{Path.home()}/\cmd{getpass.getuser()} if the UID has no entry).
 \raises \cmd{ValueError} if a value contains a comma.
+
+\api{vanilla\_kept\_directories(global\_env=None, commands=VANILLA\_PATH\_COMMANDS) -> (dict, list)}
+For each command, the directory of its first occurrence on the \cmd{PATH} of \cmd{global\_env} (or
+\cmd{os.environ}). Returns \cmd{\{directory: [commands]\}} in the order of that \cmd{PATH} and the
+commands not found. \cmd{VANILLA\_PATH\_COMMANDS} is \cmd{("initEnv", "rawTiffStructureToZarr.py",
+"kct-pb2d-krylov")}: the laupy \cmd{bin}, syscripts and the KCT binaries.
 
 \api{parse\_job\_path(value) -> list[str]\quad job\_path\_variable(job\_path, global\_env=None, leading=()) -> str}
 \cmd{argparse} type of \cmd{submitslurm -{}-job-path}: the colon-separated directories made absolute

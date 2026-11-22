@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import os
 import shlex
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
@@ -21,6 +20,7 @@ from laupy.cli import (
     DASH_VALUE_OPTIONS,
     LAUPY_PYTHON,
     SubmissionEnvironment,
+    VANILLA_PATH_COMMANDS,
     VANILLA_SYSTEM_PATH,
     WORKSPACE_PATH_LABELS,
     add_common_arguments,
@@ -34,6 +34,7 @@ from laupy.cli import (
     parse_python_environment,
     prepend_path_directories,
     vanilla_base_variables,
+    vanilla_kept_directories,
     workspace_path_directories,
 )
 
@@ -62,9 +63,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-s", "--strong-nodes", action="store_true", help="Use strong nodes only")
     parser.add_argument("-x", "--exclude-weak-nodes", action="store_true", help="Exclude weak nodes")
     add_node_source_arguments(parser)
-    parser.add_argument("--vanilla", action="store_true", help=f"Do not propagate the submitting environment to the jobs (--export without ALL). A job gets only SLURM_* and explicit variables: PATH (ROOT/bin, ROOT/script, the SLURM script directory, the directory of initGanrec, /usr/local/bin:/usr/bin:/bin), HOME, USER, LOGNAME, PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME, LD_PRELOAD=, --env and --python ({LAUPY_PYTHON} of the submitting shell is not used). To test submissions independently of the user environment.")
+    parser.add_argument("--vanilla", action="store_true", help=f"Do not propagate the submitting environment to the jobs (--export without ALL). A job gets only SLURM_* and explicit variables: PATH (ROOT/bin, ROOT/script, the SLURM script directory, the --job-path directories, the directory of the first occurrence of each of {", ".join(VANILLA_PATH_COMMANDS)} on the submitting PATH, /usr/local/bin:/usr/bin:/bin), HOME, USER, LOGNAME, PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME, LD_PRELOAD=, --env and --python ({LAUPY_PYTHON} of the submitting shell is not used). To test submissions independently of the user environment.")
+    parser.add_argument("--vanilla-strict", action="store_true", help="--vanilla without the directories of the submitting PATH: the job PATH is ROOT/bin, ROOT/script, the SLURM script directory, --job-path (or --env PATH) and /usr/local/bin:/usr/bin:/bin only.")
     parser.add_argument("--job-path", type=parse_job_path, metavar="DIR[:DIR...]", help="Directories for the PATH of the jobs, after ROOT/bin, ROOT/script and the SLURM script directory (which always lead the job PATH) and, without --vanilla, before the inherited PATH.")
-    parser.add_argument("--python", type=parse_python_environment, metavar="PATH", help=f"Python (Conda/Mamba) environment of the jobs: exported as {LAUPY_PYTHON}=PATH, which initGanrec activates instead of its default, and recorded in the pipeline entry so resubmissions use it too. Without --python, {LAUPY_PYTHON} of the submitting shell is used if set.")
+    parser.add_argument("--python", type=parse_python_environment, metavar="PATH", help=f"Python (Conda/Mamba) environment of the jobs: exported as {LAUPY_PYTHON}=PATH, which initPython and initEnv activate instead of their default, and recorded in the pipeline entry so resubmissions use it too. Without --python, {LAUPY_PYTHON} of the submitting shell is used if set.")
     parser.add_argument("--env", type=parse_env_assignment, action="append", default=[], metavar="NAME=VALUE", help="Set an environment variable for every submitted job (repeatable); overrides the defaults PIPELINE_SCRIPTNAME, PIPELINE_JOBNAME and LD_PRELOAD=. PATH=... replaces the computed job PATH, ROOT/bin, ROOT/script and the SLURM script directory are still put first. Shown with --verbose.")
     scheduling_group = parser.add_mutually_exclusive_group()
     scheduling_group.add_argument("--pipeline-step", type=str, default="-1", help="Pipeline step number or DAG node name. Uses only explicit DAG dependencies. Default is -1, which are not put or evaluated against DAG.")
@@ -264,9 +266,11 @@ def preview_environment(args: argparse.Namespace, root, global_env: Mapping[str,
     root = Path(root)
     sbatch = Path(args.slurm_dir)
     sbatch_abs = sbatch if sbatch.is_absolute() else root / sbatch
-    preview = EnvironmentPreview(inherits=not args.vanilla)
+    strict = bool(getattr(args, "vanilla_strict", False))
+    vanilla = bool(args.vanilla) or strict
+    preview = EnvironmentPreview(inherits=not vanilla)
     extra = dict(args.env or [])
-    environment = SubmissionEnvironment(global_env=global_env, extra=dict(extra), vanilla=args.vanilla)
+    environment = SubmissionEnvironment(global_env=global_env, extra=dict(extra), vanilla=vanilla)
 
     # LAUPY_PYTHON as submitslurm resolves it
     python, python_source = None, None
@@ -274,7 +278,7 @@ def preview_environment(args: argparse.Namespace, root, global_env: Mapping[str,
         python, python_source = args.python, "--python"
     elif extra.get(LAUPY_PYTHON):
         python, python_source = extra[LAUPY_PYTHON], f"--env {LAUPY_PYTHON}"
-    elif not args.vanilla and global_env.get(LAUPY_PYTHON):
+    elif not vanilla and global_env.get(LAUPY_PYTHON):
         python, python_source = global_env[LAUPY_PYTHON], "submitting shell"
     if python is not None:
         try:
@@ -285,25 +289,25 @@ def preview_environment(args: argparse.Namespace, root, global_env: Mapping[str,
 
     sources: Dict[str, str] = {}
     path_sources: List[Tuple[str, str]] = []
-    if args.vanilla:
-        environment.base = vanilla_base_variables(root, sbatch_abs, global_env, args.job_path)
-        sources.update({name: "vanilla default" for name in environment.base})
-        init_dir = shutil.which("initGanrec", path=global_env.get("PATH", ""))
-        init_dir = os.path.dirname(os.path.abspath(init_dir)) if init_dir else None
+    if vanilla:
+        environment.base = vanilla_base_variables(root, sbatch_abs, global_env, args.job_path, strict=strict)
+        sources.update({name: "vanilla-strict default" if strict else "vanilla default" for name in environment.base})
         labels = dict(zip(workspace_path_directories(root, sbatch_abs), WORKSPACE_PATH_LABELS))
         labels.update({d: "--job-path" for d in args.job_path or []})
-        if init_dir:
-            labels.setdefault(init_dir, "initGanrec")
+        if not strict:
+            kept, missing = vanilla_kept_directories(global_env)
+            for directory, commands in kept.items():
+                labels.setdefault(directory, "submitting PATH (" + ", ".join(commands) + ")")
+            if missing:
+                preview.warnings.append("not on the submitting PATH, so their directories are not on the job PATH: " + ", ".join(missing))
         labels.update({d: "system" for d in VANILLA_SYSTEM_PATH if d not in labels})
         path_sources = [(d, labels.get(d, "")) for d in environment.base["PATH"].split(os.pathsep)]
-        if not init_dir:
-            preview.warnings.append("initGanrec is not on the submitting PATH; recipes that source it will fail")
     leading = workspace_path_directories(root, sbatch_abs)
     leading_labels = list(zip(leading, WORKSPACE_PATH_LABELS))
     if "PATH" in extra:
         environment.extra["PATH"] = prepend_path_directories(leading, extra["PATH"])
         path_sources = leading_labels + [(d, "--env PATH") for d in extra["PATH"].split(os.pathsep) if d and d not in leading]
-    elif not args.vanilla:
+    elif not vanilla:
         job_path = args.job_path or []
         environment.extra["PATH"] = job_path_variable(job_path, global_env, leading)
         labels = dict(leading_labels)
@@ -324,7 +328,7 @@ def preview_environment(args: argparse.Namespace, root, global_env: Mapping[str,
             source = "per job"
         elif name == "PATH" and "PATH" in extra:
             source = "ROOT/bin, ROOT/script, SLURM script directory + --env PATH"
-        elif name == "PATH" and not args.vanilla:
+        elif name == "PATH" and not vanilla:
             source = "ROOT/bin, ROOT/script, SLURM script directory" + (", --job-path" if args.job_path else "") + " + inherited"
         else:
             source = sources.get(name, "")

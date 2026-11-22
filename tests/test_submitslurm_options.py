@@ -3,9 +3,11 @@
 Run with: python -m pytest tests/test_submitslurm_options.py  (or python tests/test_submitslurm_options.py)
 """
 import argparse
+import os
 import sys
 from unittest import mock
 
+from laupy import cli
 from laupy import submitslurm_options as so
 
 
@@ -92,6 +94,48 @@ def test_preview_vanilla(tmp_path):
     assert "LAUPY_PYTHON" not in preview.variables          # the shell's value is not used with --vanilla
     assert preview.variables["OMP_NUM_THREADS"] == ("8", "--env OMP_NUM_THREADS")
     assert preview.export.startswith("--export=PATH=")
+
+
+def _commands(directory, *names):
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (directory / name).write_text("#!/bin/sh\n")
+        (directory / name).chmod(0o755)
+    return str(directory)
+
+
+def test_vanilla_keeps_command_directories(tmp_path):
+    group = _commands(tmp_path / "group", "initEnv", "initPython")
+    shadow = _commands(tmp_path / "shadow", "initEnv")
+    syscripts = _commands(tmp_path / "syscripts", "rawTiffStructureToZarr.py")
+    kct = _commands(tmp_path / "kct", "kct-pb2d-krylov")
+    other = _commands(tmp_path / "other", "tool")
+    # first occurrence of each command, in the order of the submitting PATH
+    env = {"PATH": os.pathsep.join([other, kct, shadow, group, syscripts, "/usr/bin"])}
+    kept, missing = cli.vanilla_kept_directories(env)
+    assert list(kept) == [kct, shadow, syscripts] and kept[shadow] == ["initEnv"] and missing == []
+    args = so.parse_merged(["--vanilla", "s.sbatch"])
+    preview = so.preview_environment(args, tmp_path, global_env=env)
+    assert [d for d, _ in preview.path][3:6] == [kct, shadow, syscripts]
+    assert dict(preview.path)[kct] == "submitting PATH (kct-pb2d-krylov)"
+    assert other not in preview.variables["PATH"][0] and group not in preview.variables["PATH"][0]
+    assert preview.warnings == []
+    # a missing command is reported
+    preview = so.preview_environment(args, tmp_path, global_env={"PATH": group})
+    assert any("rawTiffStructureToZarr.py, kct-pb2d-krylov" in w for w in preview.warnings)
+    # configurable list
+    assert list(cli.vanilla_kept_directories(env, ["tool"])[0]) == [other]
+
+
+def test_vanilla_strict(tmp_path):
+    group = _commands(tmp_path / "group", "initEnv")
+    args = so.parse_merged(["--vanilla-strict", "--job-path", "/opt/tools", "s.sbatch"])
+    preview = so.preview_environment(args, tmp_path, global_env={"PATH": group, "LAUPY_PYTHON": "/x"})
+    assert not preview.inherits and not preview.export.startswith("--export=ALL")
+    assert [d for d, _ in preview.path] == [str(tmp_path / "bin"), str(tmp_path / "script"), str(tmp_path / "sbatch"),
+                                            "/opt/tools"] + cli.VANILLA_SYSTEM_PATH
+    assert "LAUPY_PYTHON" not in preview.variables
+    assert not any("not on the submitting PATH" in w for w in preview.warnings)
 
 
 def test_preview_inherited(tmp_path):
